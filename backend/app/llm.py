@@ -48,9 +48,9 @@ def _providers():
         for model in settings.gemini_model.split(","):
             p.append((f"gemini:{model.strip()}", model.strip(), gemini))
     if settings.groq_api_key:
-        p.append(("groq", settings.groq_model,
-                  OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key,
-                         max_retries=1, timeout=90)))
+        groq = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key, max_retries=0, timeout=90)
+        for model in settings.groq_model.split(","):
+            p.append((f"groq:{model.strip()}", model.strip(), groq))
     if settings.ollama_url:
         p.append(("ollama", settings.ollama_model,
                   OpenAI(base_url=settings.ollama_url.rstrip("/") + "/v1", api_key="ollama", timeout=300)))
