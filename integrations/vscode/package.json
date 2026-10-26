@@ -1,0 +1,44 @@
+{
+  "name": "devmate-ai",
+  "displayName": "DevMate AI",
+  "description": "Code review, security scanning, debugging, docs and test generation, powered by your local DevMate backend.",
+  "version": "1.0.0",
+  "publisher": "devmate",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Programming Languages", "Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "devmate.analyze", "title": "DevMate: Analyze Workspace" },
+      { "command": "devmate.explainError", "title": "DevMate: Explain Error / Stack Trace" },
+      { "command": "devmate.generateTests", "title": "DevMate: Generate Tests for Current File" },
+      { "command": "devmate.ask", "title": "DevMate: Ask About This Codebase" },
+      { "command": "devmate.review", "title": "DevMate: AI Review of Top Issues" },
+      { "command": "devmate.readme", "title": "DevMate: Generate README" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "devmate.explainError", "when": "editorHasSelection", "group": "devmate@1" },
+        { "command": "devmate.generateTests", "group": "devmate@2" }
+      ]
+    },
+    "configuration": {
+      "title": "DevMate AI",
+      "properties": {
+        "devmate.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the DevMate backend."
+        },
+        "devmate.minSeverity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "default": "low",
+          "description": "Lowest severity shown in the Problems panel."
+        }
+      }
+    }
+  }
+}

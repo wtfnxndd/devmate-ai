@@ -1,0 +1,9 @@
+# Lightweight set for the GitHub Actions PR bot (no web server, vector DB or embeddings needed).
+pydantic-settings==2.7.1
+sqlalchemy==2.0.36
+openai==1.59.7
+tree-sitter==0.23.2
+tree-sitter-language-pack==0.6.1
+bandit==1.8.0
+ruff==0.8.6
+lizard==1.17.13

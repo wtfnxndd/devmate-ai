@@ -1,0 +1,9 @@
+backend/.venv/
+backend/.env
+backend/data/
+__pycache__/
+frontend/.dart_tool/
+frontend/build/
+frontend/.flutter-plugins*
+*.pyc
+.DS_Store

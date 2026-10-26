@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+pydantic-settings==2.7.1
+openai==1.59.7
+chromadb==0.6.3
+tree-sitter==0.23.2
+tree-sitter-language-pack==0.6.1
+bandit==1.8.0
+ruff==0.8.6
+httpx==0.28.1
+lizard==1.17.13
+posthog<6

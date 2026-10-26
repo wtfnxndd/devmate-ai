@@ -1,0 +1,66 @@
+# DevMate AI — automatic pull-request review (free on GitHub Actions for public repos).
+#
+# Setup in the repository you want reviewed:
+#   1. Copy this file to .github/workflows/devmate-review.yml
+#   2. Settings → Secrets and variables → Actions:
+#        - Variable DEVMATE_REPO = <your-github-user>/devmate-ai   (where you pushed this project)
+#        - Secret   GEMINI_API_KEY (optional, free from https://aistudio.google.com/apikey)
+#        - Secret   GROQ_API_KEY   (optional fallback)
+name: DevMate AI review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out DevMate AI
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.DEVMATE_REPO }}
+          path: .devmate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: .devmate/backend/requirements-ci.txt
+
+      - name: Install DevMate
+        run: pip install -r .devmate/backend/requirements-ci.txt
+
+      - name: Review changed lines
+        id: review
+        working-directory: .devmate/backend
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set +e
+          python -m app.cli review --path "$GITHUB_WORKSPACE" --base "origin/${{ github.base_ref }}" \
+            --out "$RUNNER_TEMP/review.md" --fail-on-high
+          echo "high=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update the PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --edit-last --body-file "$RUNNER_TEMP/review.md" \
+            || gh pr comment ${{ github.event.pull_request.number }} --body-file "$RUNNER_TEMP/review.md"
+
+      - name: Fail if new high-severity issues
+        if: steps.review.outputs.high != '0'
+        run: |
+          echo "::error::DevMate found new high-severity issues in this PR"
+          exit 1
