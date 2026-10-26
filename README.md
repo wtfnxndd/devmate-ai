@@ -156,7 +156,10 @@ Browser ──► Cloudflare Workers static assets (Flutter web app)
 The backend needs Python tools (Tree-sitter, Bandit, ChromaDB) that can't run on Cloudflare Workers. It runs on your machine, and Cloudflare Tunnel publishes it securely with no port forwarding and no account needed.
 
 1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys with `wrangler deploy` (config in `frontend/wrangler.jsonc`). Live at **https://devmate-ai.rn4263313.workers.dev**.
-2. **Backend, whenever you want it online:** `./deploy/cloudflare-tunnel.sh`. It prints a private link like `https://devmate-ai.rn4263313.workers.dev/?api=https://xxxx.trycloudflare.com&token=…`. Open it, and the app remembers the backend URL and token.
+2. **Backend, whenever you want it online:** double-click **`DevMate Online.command`** on the Desktop, or run `./deploy/cloudflare-tunnel.sh`. It starts the locked-down backend and a free tunnel, then saves the tunnel address in Cloudflare KV, so the site link **never changes**. The site's Worker serves `/backend-url` and the app picks the address up automatically.
+   - On a new browser or device, open the token link the script prints once; after that, just open `https://devmate-ai.rn4263313.workers.dev`.
+
+> Why not host the backend in the cloud for free? Hugging Face now charges for Docker Spaces, Render's free tier (512 MB, under 1 CPU) is too small for the analysis tools and embeddings, and the remaining hosts require a credit card. `backend/Dockerfile` is included if you later choose a paid host (Cloudflare Containers, Render Starter, Fly.io, etc.).
 
 When the backend runs through the tunnel it requires the access token (stored in `backend/.api_token`), and **local-folder import is disabled**, so nobody can read files on your computer.
 

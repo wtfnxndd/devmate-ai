@@ -1,11 +1,16 @@
-// Cloudflare Workers static-assets deploy for the Flutter web build (free tier).
+// Cloudflare Workers deploy for the Flutter web build (free tier).
 // Deploy: flutter build web --release && npx wrangler deploy
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "devmate-ai",
+  "main": "worker.js",
   "compatibility_date": "2026-10-19",
   "assets": {
     "directory": "build/web",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/backend-url"]
+  },
+  // Holds the current backend (tunnel) URL.
+  "kv_namespaces": [{ "binding": "DEVMATE_CONFIG", "id": "f15bfb27df344a1aba01d6e18e714757" }]
 }

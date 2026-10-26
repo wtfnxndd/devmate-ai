@@ -23,6 +23,17 @@ class Api {
     if (tokenFromQuery != null) await prefs.setString('api_token', tokenFromQuery);
     baseUrl = (prefs.getString('api_url') ?? _defaultUrl).replaceAll(RegExp(r'/+$'), '');
     token = prefs.getString('api_token') ?? '';
+    // On the hosted site, ask the Worker for the backend's current tunnel URL (it changes on every restart).
+    if (fromQuery == null && Uri.base.scheme == 'https') {
+      try {
+        final r = await http.get(Uri.base.resolve('/backend-url')).timeout(const Duration(seconds: 5));
+        final live = r.body.trim();
+        if (r.statusCode == 200 && live.startsWith('https://')) {
+          baseUrl = live.replaceAll(RegExp(r'/+$'), '');
+          await prefs.setString('api_url', baseUrl);
+        }
+      } catch (_) {}
+    }
   }
 
   static Future<void> configure(String url, String newToken) async {
