@@ -211,7 +211,7 @@ def chat(project_id: int, question: str, history: list) -> dict:
 
 
 # ---------------------------------------------------------------- Report
-def health_report(name: str, structure: dict, analysis: dict) -> dict:
+def health_report(name: str, structure: dict, analysis: dict, deps: dict | None = None) -> dict:
     s, a = structure["summary"], analysis
     lines = [
         f"# Project Health Report — {name}", "",
@@ -227,6 +227,7 @@ def health_report(name: str, structure: dict, analysis: dict) -> dict:
         *[f"| `{f['function']}` | `{f['file']}:{f['line']}` | {f['complexity']} |" for f in a["complex_functions"][:10]],
         "", "## Top issues",
         *[f"- **[{f['severity']}]** `{f['file']}:{f['line']}` {f['rule']} — {f['message']}" for f in a["findings"][:15]],
+        "", "## Vulnerable dependencies (OWASP A06)", dependency_markdown(deps or {}),
     ]
     static_md = "\n".join(lines)
     prompt = ("Below is a static-analysis health report. Add an 'Executive summary' at the top (3-4 sentences) and a "
@@ -234,3 +235,72 @@ def health_report(name: str, structure: dict, analysis: dict) -> dict:
               "advice. Keep all existing tables.\n\n" + static_md)
     md, ai = _try_llm(prompt, static_md)
     return {"markdown": md, "ai": ai}
+
+
+# ---------------------------------------------------------------- Per-finding auto-fix
+def fix_finding(root: Path, finding: dict) -> dict:
+    """Asks the LLM for a minimal patch for one finding and returns original/fixed code for a diff view."""
+    rel, line = finding["file"], int(finding["line"])
+    try:
+        lines = (root / rel).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(f"Cannot read {rel}") from e
+    lo, hi = max(1, line - 8), min(len(lines), line + 8)
+    original = "\n".join(lines[lo - 1 : hi])
+    prompt = (
+        f"Issue: {finding['rule']} — {finding['message']} at {rel}:{line}.\n"
+        f"Here are lines {lo}-{hi} of the file:\n```\n{original}\n```\n"
+        "Return ONLY the corrected version of exactly these lines inside one ```code block``` (same indentation, "
+        "keep unrelated lines unchanged), then one short paragraph starting with 'Why:' explaining the fix."
+    )
+    try:
+        answer = llm.ask(prompt)
+    except llm.NoLLMAvailable as e:
+        return {"file": rel, "start": lo, "original": original, "fixed": None, "explanation": str(e), "ai": False}
+    m = re.search(r"```[\w+-]*\n(.*?)```", answer, re.S)
+    fixed = m.group(1).rstrip("\n") if m else None
+    why = answer[m.end():].strip() if m else answer
+    return {"file": rel, "start": lo, "original": original, "fixed": fixed, "explanation": why, "ai": True}
+
+
+# ---------------------------------------------------------------- File-level assistants
+FILE_TASKS = {
+    "explain": ("Explain this file for a new team member: purpose, how it fits the project, a walkthrough of each "
+                "class/function, data flow, and anything surprising. Use headings and bullet points."),
+    "refactor": ("Suggest concrete refactorings for this file: code smells, duplication, naming, SOLID / design-pattern "
+                 "improvements, performance. For each give before/after code. Finish with the refactored full file "
+                 "only if it is under 150 lines."),
+    "docstrings": ("Rewrite this file adding complete documentation comments/docstrings in the language's standard "
+                   "style (Google-style docstrings for Python, JSDoc, Javadoc, Dartdoc, etc.) for every module, class "
+                   "and function. Do not change any logic. Return the full documented file in one code block."),
+}
+
+
+def file_assist(root: Path, structure: dict, rel: str, task: str) -> dict:
+    info = structure["files"].get(rel)
+    if not info or task not in FILE_TASKS:
+        raise ValueError("Unknown file or task")
+    code = (root / rel).read_text(encoding="utf-8")
+    symbols = "\n".join(f"- {f['name']}{f['params']} (lines {f['start']}-{f['end']})" for f in info["functions"])
+    fallback = (f"**{rel}** — {info['language']}, {info['lines']} lines\n\n"
+                f"**Classes:** {', '.join(c['name'] for c in info['classes']) or 'none'}\n\n**Functions:**\n{symbols or 'none'}\n\n"
+                f"**Imports:**\n" + "\n".join(f"- `{i}`" for i in info["imports"][:30]))
+    prompt = f"{FILE_TASKS[task]}\n\nFile `{rel}`:\n```{info['language']}\n{code[:24000]}\n```"
+    md, ai = _try_llm(prompt, fallback)
+    return {"markdown": md, "ai": ai, "task": task, "file": rel}
+
+
+def dependency_markdown(deps: dict) -> str:
+    if not deps.get("dependencies"):
+        return "No pinned dependencies found (requirements.txt, pyproject.toml, package.json, pubspec.yaml, go.mod)."
+    rows = []
+    for d in deps["dependencies"]:
+        if d.get("vulns"):
+            v = d["vulns"][0]
+            fix = ", ".join(v.get("fixed_in", [])) or "—"
+            rows.append(f"| `{d['name']}` {d['version']} | {len(d['vulns'])} | {d['worst']} | "
+                        f"{(v.get('aliases') or [v['id']])[0]}: {v.get('summary', '')[:80]} | {fix} |")
+    head = f"**{deps['vulnerable']}** of {len(deps['dependencies'])} dependencies have **{deps['total_vulns']}** known vulnerabilities (OSV.dev).\n\n"
+    if not rows:
+        return head + "No known vulnerabilities. ✅"
+    return head + "| Package | Vulns | Worst | Example | Fixed in |\n|---|---|---|---|---|\n" + "\n".join(rows)

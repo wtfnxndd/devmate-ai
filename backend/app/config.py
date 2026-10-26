@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     data_dir: Path = BASE_DIR / "data"
     github_token: str = ""
 
+    # Security when the API is reachable from the internet (e.g. through a Cloudflare Tunnel):
+    # every /api call must send this token (header X-DevMate-Token), and importing local folders is disabled.
+    api_token: str = ""
+    allow_local_import: bool = True
+
     max_file_bytes: int = 200_000
     rag_top_k: int = 5
 

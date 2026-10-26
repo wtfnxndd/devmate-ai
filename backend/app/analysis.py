@@ -133,6 +133,10 @@ def _complexity(files):
     return funcs, smells, avg
 
 
+def grade(score: int) -> str:
+    return "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D" if score >= 40 else "F"
+
+
 def _is_test(rel: str) -> bool:
     p = rel.replace("\\", "/").lower()
     name = p.rsplit("/", 1)[-1]
@@ -173,7 +177,7 @@ def run_analysis(root: Path) -> dict:
     by_cat = {c: sum(1 for f in findings if f["category"] == c) for c in ("security", "bug", "smell")}
     return {
         "health_score": score,
-        "grade": "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D" if score >= 40 else "F",
+        "grade": grade(score),
         "counts": counts, "by_category": by_cat, "avg_complexity": avg_cc,
         "complex_functions": funcs[:15], "findings": findings[:500],
         "tools": ["lizard", "devmate-rules"] + (["bandit", "ruff"] if has_python else [])

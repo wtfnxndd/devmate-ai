@@ -2,14 +2,19 @@ import logging
 import shutil
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+import secrets
+
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from datetime import datetime
+
+from . import deps as depscan
 from . import engines, ingest, llm, rag
-from .analysis import run_analysis
+from .analysis import grade, run_analysis
 from .config import settings
 from .db import ChatMessage, Project, SessionLocal, init_db
 from .parser import analyze_structure
@@ -19,6 +24,19 @@ log = logging.getLogger("devmate")
 
 app = FastAPI(title="DevMate AI", version="1.0.0",
               description="Intelligent Software Review, Debugging & Documentation Assistant")
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    if (settings.api_token and request.url.path.startswith("/api/") and request.url.path != "/api/health"
+            and request.method != "OPTIONS"):
+        sent = request.headers.get("x-devmate-token", "")
+        if not secrets.compare_digest(sent, settings.api_token):
+            return JSONResponse({"detail": "Missing or wrong access token"}, status_code=401)
+    return await call_next(request)
+
+
+# Added after the token check so CORS headers also wrap 401 responses.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 init_db()
 
@@ -41,6 +59,18 @@ class DebugIn(BaseModel):
 
 class ChatIn(BaseModel):
     message: str
+
+
+class FixIn(BaseModel):
+    file: str
+    line: int
+    rule: str = ""
+    message: str = ""
+
+
+class FileTaskIn(BaseModel):
+    file: str
+    task: str  # explain | refactor | docstrings
 
 
 # ---------------------------------------------------------------- helpers
@@ -79,7 +109,19 @@ def _pipeline(pid: int):
         chunks = structure.pop("chunks")
         _save(pid, status="analyzing", results={"structure": structure})
         analysis = run_analysis(root)
-        _save(pid, status="indexing", results={"analysis": analysis})
+        _save(pid, status="scanning dependencies")
+        deps = depscan.scan(root)
+        # Known-vulnerable packages lower the health score (max 15 points).
+        analysis["code_score"] = analysis["health_score"]
+        analysis["health_score"] = max(0, analysis["health_score"] - min(15, deps["vulnerable"] * 3))
+        analysis["grade"] = grade(analysis["health_score"])
+        history = (_get(pid).results or {}).get("history", [])[-19:] + [{
+            "at": datetime.utcnow().isoformat(timespec="seconds"), "score": analysis["health_score"],
+            "counts": analysis["counts"], "vulnerable_deps": deps["vulnerable"],
+        }]
+        # Engine outputs depend on the old code, so drop them on re-analysis.
+        stale = {k: None for k in ("review", "readme", "api_docs", "report")}
+        _save(pid, status="indexing", results={"analysis": analysis, "dependencies": deps, "history": history, **stale})
         rag.index_chunks(pid, chunks)
         _save(pid, status="ready", results={"endpoints": engines.find_endpoints(root, structure)})
         log.info("Project %s ready: %s", pid, structure["summary"])
@@ -105,6 +147,7 @@ def _summary(p: Project) -> dict:
         "id": p.id, "name": p.name, "source": p.source, "status": p.status,
         "created_at": p.created_at.isoformat(), "summary": r.get("structure", {}).get("summary"),
         "health_score": a.get("health_score"), "grade": a.get("grade"), "counts": a.get("counts"),
+        "vulnerable_deps": r.get("dependencies", {}).get("vulnerable"),
         "error": r.get("error"),
     }
 
@@ -112,7 +155,8 @@ def _summary(p: Project) -> dict:
 # ---------------------------------------------------------------- routes
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "llm_providers": llm.available()}
+    return {"status": "ok", "llm_providers": llm.available(), "auth_required": bool(settings.api_token),
+            "local_import": settings.allow_local_import}
 
 
 @app.post("/api/projects/upload")
@@ -137,6 +181,8 @@ def github(body: GithubIn, bg: BackgroundTasks):
 
 @app.post("/api/projects/local")
 def local(body: LocalIn, bg: BackgroundTasks):
+    if not settings.allow_local_import:
+        raise HTTPException(403, "Importing local folders is disabled on this server")
     try:
         root = ingest.from_local(body.path)
     except Exception as e:
@@ -169,7 +215,15 @@ def delete_project(pid: int):
 
 @app.post("/api/projects/{pid}/reanalyze")
 def reanalyze(pid: int, bg: BackgroundTasks):
-    _get(pid)
+    p = _get(pid)
+    if p.source.startswith("local:") and settings.allow_local_import:
+        # Re-copy the folder so edits made since the import are analysed.
+        try:
+            root = ingest.from_local(p.source[len("local:"):])
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        shutil.rmtree(Path(p.path), ignore_errors=True)
+        _save(pid, path=str(root))
     _save(pid, status="queued")
     bg.add_task(_pipeline, pid)
     return {"status": "queued"}
@@ -203,7 +257,7 @@ def read_file(pid: int, path: str):
 def _cached(pid: int, key: str, fn, refresh: bool):
     p = _get(pid)
     _require(p, "analysis")
-    if not refresh and key in p.results and p.results[key].get("ai"):
+    if not refresh and (p.results or {}).get(key) and p.results[key].get("ai"):
         return p.results[key]
     out = fn(p)
     _save(pid, results={key: out})
@@ -229,7 +283,55 @@ def api_docs(pid: int, refresh: bool = False):
 @app.post("/api/projects/{pid}/report")
 def report(pid: int, refresh: bool = False):
     return _cached(pid, "report", lambda p: engines.health_report(
-        p.name, p.results["structure"], p.results["analysis"]), refresh)
+        p.name, p.results["structure"], p.results["analysis"], p.results.get("dependencies")), refresh)
+
+
+@app.get("/api/projects/{pid}/dependencies")
+def dependencies(pid: int):
+    return _require(_get(pid), "dependencies")
+
+
+@app.get("/api/projects/{pid}/history")
+def history(pid: int):
+    return (_get(pid).results or {}).get("history", [])
+
+
+@app.get("/api/projects/{pid}/files")
+def files(pid: int):
+    """Per-file metrics for the file explorer."""
+    p = _get(pid)
+    s, a = _require(p, "structure"), _require(p, "analysis")
+    cc = {}
+    for f in a["complex_functions"]:
+        cc[f["file"]] = max(cc.get(f["file"], 0), f["complexity"])
+    issues = {}
+    for f in a["findings"]:
+        sev = issues.setdefault(f["file"], {"high": 0, "medium": 0, "low": 0})
+        sev[f["severity"]] = sev.get(f["severity"], 0) + 1
+    return [{
+        "file": rel, "language": info["language"], "lines": info["lines"],
+        "classes": len(info["classes"]), "functions": len(info["functions"]),
+        "max_complexity": cc.get(rel), "issues": issues.get(rel, {"high": 0, "medium": 0, "low": 0}),
+    } for rel, info in sorted(s["files"].items())]
+
+
+@app.post("/api/projects/{pid}/fix")
+def fix(pid: int, body: FixIn):
+    p = _get(pid)
+    _require(p, "analysis")
+    try:
+        return engines.fix_finding(Path(p.path), body.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/projects/{pid}/file-assist")
+def file_assist(pid: int, body: FileTaskIn):
+    p = _get(pid)
+    try:
+        return engines.file_assist(Path(p.path), _require(p, "structure"), body.file, body.task)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.post("/api/projects/{pid}/tests")

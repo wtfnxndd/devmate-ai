@@ -36,7 +36,11 @@ Review  Docs     Tests     Debug      Chat    Health report
 | Test generation | Picks the framework per language (pytest, Jest, JUnit, flutter_test, …). It produces a test skeleton offline and full tests with AI. |
 | Architecture mapping | Folder tree, internal dependency edges and a Mermaid graph, with a one-click open in Mermaid Live. |
 | Contextual project memory | ChromaDB vector store per project, plus persistent chat history. |
-| Health report | Score out of 100 with a grade, metric tables and an AI executive summary with recommendations. |
+| Health report | Score out of 100 with a grade, metric tables and an AI executive summary with recommendations. Downloadable as Markdown. |
+| Dependency CVE scan (OWASP A06) | Reads requirements.txt, pyproject.toml, package.json, pubspec.yaml and go.mod, and checks every version against the free **OSV.dev** database. Shows the CVEs and the safe version to upgrade to. |
+| One-click AI fix | Every finding has **Fix with AI**, which shows a before/after diff with an explanation. |
+| File assistants | For any file: **Explain**, **Refactor**, **Add docs** (docstrings, JSDoc, Dartdoc…) and **Tests**. |
+| Health trend | The score is recorded on every re-analysis and charted on the dashboard. |
 
 Every feature works **without any API key** (static mode). Adding a free key adds AI explanations on top.
 
@@ -137,7 +141,24 @@ Click **DevMate** in the status bar, or open the Command Palette (⇧⌘P) and t
 
 Install: copy `package.json` and `extension.js` into `~/.vscode/extensions/devmate.devmate-ai-1.0.0/` and restart VS Code. You can also package it with `npx @vscode/vsce package`. The backend must be running.
 
-## Free deployment
+## Deploy with Cloudflare (free)
+
+```
+Browser ──► Cloudflare Pages (Flutter web app)
+   │
+   └──► Cloudflare Tunnel ──► your computer: FastAPI backend (locked with an access token)
+```
+
+The backend needs Python tools (Tree-sitter, Bandit, ChromaDB) that can't run on Cloudflare Workers. It runs on your machine, and Cloudflare Tunnel publishes it securely with no port forwarding and no account needed.
+
+1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys to `https://devmate-ai.pages.dev`.
+2. **Backend, whenever you want it online:** `./deploy/cloudflare-tunnel.sh`. It prints a private link like `https://devmate-ai.pages.dev/?api=https://xxxx.trycloudflare.com&token=…`. Open it, and the app remembers the backend URL and token.
+
+When the backend runs through the tunnel it requires the access token (stored in `backend/.api_token`), and **local-folder import is disabled**, so nobody can read files on your computer.
+
+Requires `cloudflared` (`~/development/bin/cloudflared`) and Node.js for `npx wrangler`.
+
+## Other free deployment options
 
 - **Backend:** Render, Koyeb or Hugging Face Spaces (free tier). Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - **Database:** Supabase or Neon free Postgres. Set `DATABASE_URL`.

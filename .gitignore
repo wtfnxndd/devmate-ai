@@ -7,3 +7,4 @@ frontend/build/
 frontend/.flutter-plugins*
 *.pyc
 .DS_Store
+backend/.api_token

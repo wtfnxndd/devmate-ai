@@ -129,8 +129,9 @@ def _folder_tree(paths, limit=200) -> str:
         items = sorted(node.items(), key=lambda kv: (not kv[1], kv[0]))
         for i, (name, child) in enumerate(items):
             last = i == len(items) - 1
-            lines.append(f"{prefix}{'└── ' if last else '├── '}{name}{'/' if child else ''}")
-            rec(child, prefix + ("    " if last else "│   "))
+            # ASCII connectors render in every monospace font (box-drawing glyphs don't on Flutter web).
+            lines.append(f"{prefix}{'`-- ' if last else '|-- '}{name}{'/' if child else ''}")
+            rec(child, prefix + ("    " if last else "|   "))
 
     rec(tree)
     return "\n".join(lines)
