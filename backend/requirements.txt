@@ -13,3 +13,5 @@ ruff==0.8.6
 httpx==0.28.1
 lizard==1.17.13
 posthog<6
+fpdf2==2.8.2
+markdown==3.7

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api.dart';
+import '../screens/project_screen.dart' show ProjectNav;
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -146,9 +147,29 @@ class _FindingDetailState extends State<FindingDetail> {
   late final Future<String> _code = Api.file(widget.pid, widget.finding['file']);
   Map<String, dynamic>? _fix;
   bool _fixing = false;
+  bool _applied = false;
+
+  Future<void> _apply() async {
+    try {
+      final f = _fix!;
+      await Api.post('/projects/${widget.pid}/fix/apply',
+          {'file': f['file'], 'start': f['start'], 'original': f['original'], 'fixed': f['fixed']});
+      if (!mounted) return;
+      setState(() => _applied = true);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Fix applied. See "Fix & Export" to review, download or re-analyze.'),
+        action: SnackBarAction(label: 'Open', onPressed: () => ProjectNav.of(context)?.go(11)),
+      ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
 
   Future<void> _getFix() async {
-    setState(() => _fixing = true);
+    setState(() {
+      _fixing = true;
+      _applied = false;
+    });
     try {
       final f = widget.finding;
       _fix = Map<String, dynamic>.from(await Api.post('/projects/${widget.pid}/fix',
@@ -211,6 +232,12 @@ class _FindingDetailState extends State<FindingDetail> {
               onPressed: () => Clipboard.setData(ClipboardData(text: _fix!['fixed'])),
               icon: const Icon(Icons.copy, size: 16),
               label: const Text('Copy fixed code'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: _applied ? null : _apply,
+              icon: Icon(_applied ? Icons.check : Icons.playlist_add_check, size: 18),
+              label: Text(_applied ? 'Applied' : 'Apply to project'),
             ),
           ]),
           const SizedBox(height: 8),

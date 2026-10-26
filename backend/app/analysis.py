@@ -11,6 +11,9 @@ from pathlib import Path
 
 import lizard
 
+from .duplication import as_findings as duplication_findings
+from .duplication import find_duplicates
+
 from .ingest import IGNORED_DIRS, iter_source_files
 
 BIN = Path(sys.executable).parent
@@ -159,7 +162,8 @@ def run_analysis(root: Path) -> dict:
     files = list(iter_source_files(root))
     has_python = any(lang == "python" for _, lang, _ in files)
     funcs, smells, avg_cc = _complexity(files)
-    findings = _regex_rules(files) + smells + _semgrep(root)
+    duplication = find_duplicates(root)
+    findings = _regex_rules(files) + smells + _semgrep(root) + duplication_findings(duplication)
     if has_python:
         findings += _bandit(root) + _ruff(root)
     # Test code legitimately uses fake secrets, asserts and weak hashes; don't report those as vulnerabilities.
@@ -179,7 +183,7 @@ def run_analysis(root: Path) -> dict:
         "health_score": score,
         "grade": grade(score),
         "counts": counts, "by_category": by_cat, "avg_complexity": avg_cc,
-        "complex_functions": funcs[:15], "findings": findings[:500],
+        "complex_functions": funcs[:15], "findings": findings[:500], "duplication": duplication,
         "tools": ["lizard", "devmate-rules"] + (["bandit", "ruff"] if has_python else [])
                  + (["semgrep"] if shutil.which("semgrep") else []),
     }

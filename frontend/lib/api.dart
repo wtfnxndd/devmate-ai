@@ -63,6 +63,13 @@ class Api {
     return utf8.decode(r.bodyBytes);
   }
 
+  /// Raw bytes (PDF / ZIP downloads), sent with the access token.
+  static Future<Uint8List> bytes(String path, [Map<String, String>? q]) async {
+    final r = await http.get(_u(path, q), headers: _auth);
+    if (r.statusCode >= 400) _decode(r);
+    return r.bodyBytes;
+  }
+
   static Future<dynamic> uploadZip(String filename, Uint8List bytes) async {
     final req = http.MultipartRequest('POST', _u('/projects/upload'))
       ..headers.addAll(_auth)

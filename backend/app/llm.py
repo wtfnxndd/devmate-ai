@@ -5,6 +5,8 @@ Responses are cached in the database, so re-analysing unchanged code costs no AP
 """
 import hashlib
 import logging
+import re
+import time
 
 from openai import OpenAI
 
@@ -22,6 +24,19 @@ SYSTEM_PROMPT = (
 
 class NoLLMAvailable(RuntimeError):
     pass
+
+
+# provider name -> unix time until which it is skipped (free-tier quota exhausted)
+_cooldown: dict[str, float] = {}
+
+
+def _retry_after(err: Exception) -> float:
+    """Seconds to wait after a 429, from the provider's RetryInfo when present."""
+    m = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", str(err))
+    if m:
+        h, mnt, sec = (float(x) if x else 0 for x in m.groups())
+        return h * 3600 + mnt * 60 + sec
+    return 60
 
 
 def _providers():
@@ -59,6 +74,9 @@ def ask(prompt: str, system: str = SYSTEM_PROMPT, use_cache: bool = True, histor
     messages = [{"role": "system", "content": system}, *(history or []), {"role": "user", "content": prompt}]
     errors = []
     for name, model, client in providers:
+        if _cooldown.get(name, 0) > time.time():
+            errors.append(f"{name}: rate-limited, skipped")
+            continue
         try:
             resp = client.chat.completions.create(model=model, messages=messages, temperature=0.2)
             text = resp.choices[0].message.content or ""
@@ -67,6 +85,8 @@ def ask(prompt: str, system: str = SYSTEM_PROMPT, use_cache: bool = True, histor
                 db.commit()
             return text
         except Exception as e:  # rate limit / outage -> try the next free provider
-            log.warning("LLM provider %s failed: %s", name, e)
-            errors.append(f"{name}: {e}")
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                _cooldown[name] = time.time() + _retry_after(e)
+            log.warning("LLM provider %s failed: %s", name, str(e)[:200])
+            errors.append(f"{name}: {str(e)[:160]}")
     raise NoLLMAvailable("All LLM providers failed — " + " | ".join(errors))

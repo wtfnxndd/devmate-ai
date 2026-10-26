@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -6,14 +7,14 @@ import secrets
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from datetime import datetime
 
 from . import deps as depscan
-from . import engines, ingest, llm, rag
+from . import engines, fixer, ingest, llm, pdf, rag
 from .analysis import grade, run_analysis
 from .config import settings
 from .db import ChatMessage, Project, SessionLocal, init_db
@@ -68,6 +69,13 @@ class FixIn(BaseModel):
     message: str = ""
 
 
+class ApplyFixIn(BaseModel):
+    file: str
+    start: int
+    original: str
+    fixed: str
+
+
 class FileTaskIn(BaseModel):
     file: str
     task: str  # explain | refactor | docstrings
@@ -99,6 +107,12 @@ def _require(p: Project, key: str):
     return p.results[key]
 
 
+def _fingerprint(f: dict) -> str:
+    # Numbers in messages are usually line numbers / counts that shift when code above changes.
+    msg = re.sub(r"\b\d+\b", "#", f["message"][:100])
+    return f"{f['severity']}|{f['file']}|{f['rule']}|{msg}"
+
+
 def _pipeline(pid: int):
     """Phase 1 + 2: parse → static analysis → embed for RAG."""
     p = _get(pid)
@@ -118,6 +132,9 @@ def _pipeline(pid: int):
         history = (_get(pid).results or {}).get("history", [])[-19:] + [{
             "at": datetime.utcnow().isoformat(timespec="seconds"), "score": analysis["health_score"],
             "counts": analysis["counts"], "vulnerable_deps": deps["vulnerable"],
+            "duplication": analysis["duplication"]["percentage"],
+            # Line-independent identity of each finding, used to diff analyses (fixed vs new issues).
+            "fingerprints": sorted({_fingerprint(f) for f in analysis["findings"]}),
         }]
         # Engine outputs depend on the old code, so drop them on re-analysis.
         stale = {k: None for k in ("review", "readme", "api_docs", "report")}
@@ -205,6 +222,7 @@ def get_project(pid: int):
 def delete_project(pid: int):
     p = _get(pid)
     rag.delete(pid)
+    fixer.forget(pid)
     shutil.rmtree(Path(p.path), ignore_errors=True)
     with SessionLocal() as db:
         db.query(ChatMessage).filter_by(project_id=pid).delete()
@@ -216,7 +234,8 @@ def delete_project(pid: int):
 @app.post("/api/projects/{pid}/reanalyze")
 def reanalyze(pid: int, bg: BackgroundTasks):
     p = _get(pid)
-    if p.source.startswith("local:") and settings.allow_local_import:
+    # Keep the analysed copy if DevMate fixes were applied to it; otherwise refresh it from disk.
+    if p.source.startswith("local:") and settings.allow_local_import and not fixer.changed_files(pid):
         # Re-copy the folder so edits made since the import are analysed.
         try:
             root = ingest.from_local(p.source[len("local:"):])
@@ -347,6 +366,134 @@ def tests(pid: int, body: TestsIn):
 def debug(pid: int, body: DebugIn):
     p = _get(pid)
     return engines.debug(pid, Path(p.path), _require(p, "structure"), body.error)
+
+
+# ---------------------------------------------------------------- fixing the project
+@app.post("/api/projects/{pid}/fix/apply")
+def apply_fix(pid: int, body: ApplyFixIn):
+    p = _get(pid)
+    try:
+        res = fixer.apply_fix(pid, Path(p.path), body.file, body.start, body.original, body.fixed)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    _save(pid, results={"applied_fixes": (p.results or {}).get("applied_fixes", []) + [res]})
+    return res
+
+
+@app.post("/api/projects/{pid}/fix-all")
+def fix_all(pid: int, limit: int = 8):
+    p = _get(pid)
+    if not llm.available():
+        raise HTTPException(400, "Fix all needs a free LLM key (GEMINI_API_KEY or GROQ_API_KEY)")
+    out = fixer.fix_all(pid, Path(p.path), _require(p, "analysis")["findings"], limit=min(limit, 20))
+    _save(pid, results={"applied_fixes": (p.results or {}).get("applied_fixes", []) + out["applied"]})
+    return out
+
+
+@app.get("/api/projects/{pid}/changes")
+def changes(pid: int):
+    p = _get(pid)
+    return {"files": fixer.changed_files(pid), "applied": (p.results or {}).get("applied_fixes", []),
+            "patch": fixer.patch(pid, Path(p.path))}
+
+
+@app.post("/api/projects/{pid}/fix/revert")
+def revert(pid: int):
+    p = _get(pid)
+    n = fixer.revert(pid, Path(p.path))
+    _save(pid, results={"applied_fixes": []})
+    return {"reverted_files": n}
+
+
+@app.get("/api/projects/{pid}/export/patch", response_class=PlainTextResponse)
+def export_patch(pid: int):
+    return fixer.patch(pid, Path(_get(pid).path))
+
+
+@app.get("/api/projects/{pid}/export/zip")
+def export_zip(pid: int):
+    p = _get(pid)
+    data = fixer.export_zip(Path(p.path), p.name)
+    return Response(data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{p.name}-devmate.zip"'})
+
+
+PDF_KINDS = {"report": "Health Report", "review": "AI Code Review", "readme": "README", "api_docs": "API Reference"}
+
+
+@app.get("/api/projects/{pid}/export/pdf")
+def export_pdf(pid: int, kind: str = "report"):
+    if kind not in PDF_KINDS:
+        raise HTTPException(400, f"kind must be one of {list(PDF_KINDS)}")
+    generate = {"report": report, "review": review, "readme": readme, "api_docs": api_docs}[kind]
+    md = generate(pid)["markdown"]
+    p = _get(pid)
+    a = (p.results or {}).get("analysis", {})
+    data = pdf.render(md, PDF_KINDS[kind], p.name, a.get("health_score"), a.get("grade"))
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{p.name}-{kind}.pdf"'})
+
+
+# ---------------------------------------------------------------- duplication
+@app.get("/api/projects/{pid}/duplicates")
+def duplicates(pid: int):
+    return _require(_get(pid), "analysis").get("duplication", {"blocks": [], "percentage": 0})
+
+
+@app.post("/api/projects/{pid}/duplicates/{index}/refactor")
+def refactor_duplicate(pid: int, index: int):
+    p = _get(pid)
+    blocks = _require(p, "analysis").get("duplication", {}).get("blocks", [])
+    if not 0 <= index < len(blocks):
+        raise HTTPException(404, "No such duplicate block")
+    return engines.refactor_duplicate(Path(p.path), blocks[index])
+
+
+# ---------------------------------------------------------------- compare
+@app.get("/api/projects/{pid}/compare")
+def compare(pid: int, a: int = -2, b: int = -1):
+    """Diff two analyses of the same project (indexes into history; default: previous vs latest)."""
+    hist = (_get(pid).results or {}).get("history", [])
+    if len(hist) < 2:
+        raise HTTPException(409, "Re-analyze the project at least once to compare analyses")
+    try:
+        old, new = hist[a], hist[b]
+    except IndexError as e:
+        raise HTTPException(400, "Invalid analysis index") from e
+    comparable = "fingerprints" in old and "fingerprints" in new
+    fo, fn = set(old.get("fingerprints", [])), set(new.get("fingerprints", []))
+
+    def parse(fp):
+        sev, file, rule, msg = fp.split("|", 3)
+        return {"severity": sev, "file": file, "rule": rule, "message": msg}
+
+    return {
+        "from": {k: old.get(k) for k in ("at", "score", "counts", "vulnerable_deps", "duplication")},
+        "to": {k: new.get(k) for k in ("at", "score", "counts", "vulnerable_deps", "duplication")},
+        # Analyses recorded before issue tracking existed only have totals.
+        "comparable": comparable,
+        "fixed": [parse(x) for x in sorted(fo - fn)] if comparable else [],
+        "new": [parse(x) for x in sorted(fn - fo)] if comparable else [],
+        "unchanged": len(fo & fn),
+        "history": [{k: h.get(k) for k in ("at", "score", "counts", "vulnerable_deps", "duplication")} for h in hist],
+    }
+
+
+@app.get("/api/compare-projects")
+def compare_projects(a: int, b: int):
+    out = []
+    for pid in (a, b):
+        p = _get(pid)
+        r = p.results or {}
+        s, an, d = r.get("structure", {}).get("summary", {}), r.get("analysis", {}), r.get("dependencies", {})
+        out.append({
+            "id": pid, "name": p.name, "score": an.get("health_score"), "grade": an.get("grade"),
+            "files": s.get("files"), "lines": s.get("lines"), "functions": s.get("functions"),
+            "languages": s.get("languages"), "counts": an.get("counts"), "by_category": an.get("by_category"),
+            "avg_complexity": an.get("avg_complexity"), "duplication": an.get("duplication", {}).get("percentage"),
+            "vulnerable_deps": d.get("vulnerable"), "total_vulns": d.get("total_vulns"),
+        })
+    return out
 
 
 @app.get("/api/projects/{pid}/chat")

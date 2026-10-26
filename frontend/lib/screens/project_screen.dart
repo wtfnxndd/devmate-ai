@@ -8,6 +8,7 @@ import '../tabs/dashboard_tab.dart';
 import '../tabs/dependencies_tab.dart';
 import '../tabs/files_tab.dart';
 import '../tabs/findings_tab.dart';
+import '../tabs/improve_tabs.dart';
 import '../theme.dart';
 
 class _Dest {
@@ -29,12 +30,16 @@ const _dests = [
   _Dest(Icons.healing_outlined, 'Debugger'),
   _Dest(Icons.forum_outlined, 'Chat'),
   _Dest(Icons.assessment_outlined, 'Health Report'),
+  _Dest(Icons.auto_fix_high, 'Fix & Export', 'IMPROVE'),
+  _Dest(Icons.copy_all_outlined, 'Duplication'),
+  _Dest(Icons.compare_arrows, 'Compare'),
 ];
 
 /// Lets any tab jump to another tab (e.g. dashboard → findings).
 class ProjectNav extends InheritedWidget {
   final void Function(int) go;
-  const ProjectNav({super.key, required this.go, required super.child});
+  final Future<void> Function() reanalyze;
+  const ProjectNav({super.key, required this.go, required this.reanalyze, required super.child});
   static ProjectNav? of(BuildContext c) => c.dependOnInheritedWidgetOfExactType<ProjectNav>();
   @override
   bool updateShouldNotify(ProjectNav old) => false;
@@ -67,7 +72,10 @@ class _ProjectScreenState extends State<ProjectScreen> {
       7 => TestsTab(pid: pid),
       8 => DebugTab(pid: pid),
       9 => ChatTab(pid: pid),
-      _ => ReportTab(pid: pid, name: widget.name),
+      10 => ReportTab(pid: pid, name: widget.name),
+      11 => FixTab(pid: pid, name: widget.name),
+      12 => DuplicationTab(pid: pid),
+      _ => CompareTab(pid: pid),
     };
   }
 
@@ -113,6 +121,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
     );
     return ProjectNav(
       go: _go,
+      reanalyze: _reanalyze,
       child: Scaffold(
         appBar: AppBar(
           titleSpacing: wide ? 24 : 0,

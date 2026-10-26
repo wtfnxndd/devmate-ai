@@ -259,6 +259,13 @@ def fix_finding(root: Path, finding: dict) -> dict:
         return {"file": rel, "start": lo, "original": original, "fixed": None, "explanation": str(e), "ai": False}
     m = re.search(r"```[\w+-]*\n(.*?)```", answer, re.S)
     fixed = m.group(1).rstrip("\n") if m else None
+    if fixed is not None:
+        # LLMs tend to drop blank lines at the edges of the snippet; restore them so the patch stays minimal.
+        orig_lines, new_lines = original.split("\n"), fixed.split("\n")
+        lead = len(orig_lines) - len("\n".join(orig_lines).lstrip("\n").split("\n"))
+        trail = len(orig_lines) - len("\n".join(orig_lines).rstrip("\n").split("\n"))
+        core = "\n".join(new_lines).strip("\n")
+        fixed = "\n" * lead + core + "\n" * trail
     why = answer[m.end():].strip() if m else answer
     return {"file": rel, "start": lo, "original": original, "fixed": fixed, "explanation": why, "ai": True}
 
@@ -304,3 +311,20 @@ def dependency_markdown(deps: dict) -> str:
     if not rows:
         return head + "No known vulnerabilities. ✅"
     return head + "| Package | Vulns | Worst | Example | Fixed in |\n|---|---|---|---|---|\n" + "\n".join(rows)
+
+
+def refactor_duplicate(root: Path, block: dict) -> dict:
+    """Suggests how to remove one duplicated block (extract function / base class / util module)."""
+    parts = []
+    for o in block["occurrences"][:4]:
+        lines = (root / o["file"]).read_text(encoding="utf-8").splitlines()
+        parts.append(f"--- {o['file']} lines {o['start']}-{o['end']} ---\n" + "\n".join(lines[o["start"] - 1 : o["end"]]))
+    code = "\n\n".join(parts)
+    fallback = ("**Duplicated block** found in:\n" + "\n".join(f"- `{o['file']}:{o['start']}-{o['end']}`" for o in block["occurrences"])
+                + "\n\nExtract the shared logic into one function or module and call it from each place.\n\n```\n"
+                + block["snippet"] + "\n```")
+    prompt = ("The same code appears in several places. Propose a DRY refactoring: name and signature of the shared "
+              "function/class, where it should live, the complete extracted code, and the replacement call at each "
+              "location. Mention any small differences that need parameters.\n\n" + code)
+    md, ai = _try_llm(prompt, fallback)
+    return {"markdown": md, "ai": ai}

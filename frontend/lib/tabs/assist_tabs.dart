@@ -55,6 +55,7 @@ class ReviewTab extends StatelessWidget {
           label: 'Run AI code review',
           description: 'Static tools have already found the issues. The AI reviews the most important ones in a single request.',
           downloadName: 'code-review.md',
+          pdf: ('/projects/$pid/export/pdf', 'review'),
         )))],
       );
 }
@@ -84,8 +85,10 @@ class DocsTab extends StatelessWidget {
                     padding: const EdgeInsets.all(24),
                     child: IndexedStack(index: ctrl.index, children: [
                       AiPanel(endpoint: '/projects/$pid/readme', label: 'Generate README', downloadName: 'README.md',
+                          pdf: ('/projects/$pid/export/pdf', 'readme'),
                           description: 'Features, tech stack, setup, usage, structure and a Mermaid architecture diagram.'),
                       AiPanel(endpoint: '/projects/$pid/api-docs', label: 'Generate API docs', downloadName: 'API.md',
+                          pdf: ('/projects/$pid/export/pdf', 'api_docs'),
                           description: 'Detects FastAPI, Flask, Express, Spring and Django routes and documents parameters, responses and curl examples.'),
                     ]),
                   ),
@@ -377,6 +380,7 @@ class ReportTab extends StatelessWidget {
           label: 'Generate health report',
           icon: Icons.assessment_outlined,
           downloadName: '$name-health-report.md',
+          pdf: ('/projects/$pid/export/pdf', 'report'),
           autoRun: true,
         )))],
       );

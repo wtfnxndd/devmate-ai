@@ -335,6 +335,20 @@ Future<void> saveText(BuildContext context, String name, String text) async {
   }
 }
 
+/// Downloads a binary file from the API (PDF, ZIP) and saves it.
+Future<void> downloadFile(BuildContext context, String path, String name, [Map<String, String>? query]) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(SnackBar(content: Text('Preparing $name…'), duration: const Duration(seconds: 30)));
+  try {
+    final data = await Api.bytes(path, query);
+    messenger.hideCurrentSnackBar();
+    await FilePicker.platform.saveFile(fileName: name, bytes: data);
+  } catch (e) {
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text('Download failed: $e')));
+  }
+}
+
 /// Button → calls an engine endpoint → renders Markdown, with copy/download/regenerate.
 class AiPanel extends StatefulWidget {
   final String endpoint;
@@ -343,6 +357,9 @@ class AiPanel extends StatefulWidget {
   final IconData icon;
   final Map<String, dynamic>? body;
   final String downloadName;
+
+  /// e.g. ('/projects/1/export/pdf', 'report'): adds a "PDF" download button.
+  final (String, String)? pdf;
   final bool autoRun;
   const AiPanel({
     super.key,
@@ -352,6 +369,7 @@ class AiPanel extends StatefulWidget {
     this.icon = Icons.auto_awesome,
     this.body,
     this.downloadName = 'devmate.md',
+    this.pdf,
     this.autoRun = false,
   });
 
@@ -403,6 +421,13 @@ class _AiPanelState extends State<AiPanel> {
               onPressed: () => Clipboard.setData(ClipboardData(text: md))),
           IconButton.outlined(tooltip: 'Download', icon: const Icon(Icons.download, size: 18),
               onPressed: () => saveText(context, widget.downloadName, md)),
+          if (widget.pdf != null)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: const Text('PDF'),
+              onPressed: () => downloadFile(context, widget.pdf!.$1,
+                  widget.downloadName.replaceAll(RegExp(r'\.md$'), '.pdf'), {'kind': widget.pdf!.$2}),
+            ),
         ],
       ]),
       if (_result == null && !_loading && widget.description.isNotEmpty)

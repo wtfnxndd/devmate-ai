@@ -41,6 +41,10 @@ Review  Docs     Tests     Debug      Chat    Health report
 | One-click AI fix | Every finding has **Fix with AI**, which shows a before/after diff with an explanation. |
 | File assistants | For any file: **Explain**, **Refactor**, **Add docs** (docstrings, JSDoc, Dartdoc…) and **Tests**. |
 | Health trend | The score is recorded on every re-analysis and charted on the dashboard. |
+| **Fix the project** | **Fix with AI** patches the top issues automatically, or use **Apply to project** on a single finding. Review the coloured diff, re-analyze to verify, then download the **fixed project (ZIP)** or a **.patch** (`git apply`) for your repo. **Revert all** restores the originals. |
+| Code duplication finder | Detects copy-pasted blocks of 6+ meaningful lines across files (like PMD CPD or jscpd), shows the duplication % and offers an AI DRY-refactor suggestion. |
+| Compare and trends | Compares any two analyses (score change, issues fixed, new issues) or two projects side by side. |
+| PDF export | Branded PDF of the health report, AI review, README or API docs (pure Python: fpdf2 with free DejaVu fonts). |
 
 Every feature works **without any API key** (static mode). Adding a free key adds AI explanations on top.
 
@@ -116,7 +120,7 @@ To point at a deployed backend: `flutter run -d chrome --dart-define=API_URL=htt
 1. Static tools find the issues, and the LLM only explains the top ones in **one batched call**.
 2. RAG sends only the top 5 relevant code chunks, never the whole repository.
 3. Every LLM answer is cached in the database by prompt hash, so repeat requests are free.
-4. If Gemini is rate-limited, requests switch to Groq automatically.
+4. Gemini's free tier allows about **20 requests per model per day**, so DevMate rotates through 6 free Gemini models (about 120 requests a day). A model that hits its quota is skipped until it resets, then requests fall back to Groq if `GROQ_API_KEY` is set.
 
 ## Integrations (future scope, implemented)
 
