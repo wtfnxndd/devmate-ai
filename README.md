@@ -21,7 +21,7 @@
 Review  Docs     Tests     Debug      Chat    Health report
         │
         ▼
-[Flutter dashboard (Web / Desktop)]
+[React web app (ElevenLabs UI) · Flutter desktop]
 ```
 
 ## Features (mapped to the synopsis)
@@ -52,7 +52,7 @@ Every feature works **without any API key** (static mode). Adding a free key add
 
 | Layer | Technology |
 |---|---|
-| Frontend | Flutter (Web & Desktop) |
+| Frontend | **React + Vite + Tailwind** with the **ElevenLabs UI** component library (shadcn-based; Conversation, Message, Response, ShimmeringText) and an ElevenLabs-style monochrome design. Flutter desktop app kept in `frontend/`. |
 | Backend | Python 3.11, FastAPI |
 | LLM | Google Gemini API (free tier) with Groq (free tier) as fallback. Ollama is optional. |
 | Embeddings | all-MiniLM-L6-v2 via ONNX on the CPU (downloaded once, about 80 MB) |
@@ -88,7 +88,17 @@ Open http://localhost:8000/docs for interactive Swagger API docs.
 
 Optional: `pip install semgrep` adds OWASP Top-10 Semgrep rules (macOS and Linux only).
 
-### 2. Frontend
+### 2. Frontend (web)
+
+```bash
+cd web
+npm install
+npm run dev          # http://localhost:5173, or: npm run build && npx vite preview
+```
+
+The first page is about 250 KB; each screen and each syntax-highlighting language loads on demand.
+
+### Optional: Flutter desktop app
 
 Install the Flutter SDK (https://docs.flutter.dev/get-started/install), then:
 
@@ -155,7 +165,7 @@ Browser ──► Cloudflare Workers static assets (Flutter web app)
 
 The backend needs Python tools (Tree-sitter, Bandit, ChromaDB) that can't run on Cloudflare Workers. It runs on your machine, and Cloudflare Tunnel publishes it securely with no port forwarding and no account needed.
 
-1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys with `wrangler deploy` (config in `frontend/wrangler.jsonc`). Live at **https://devmate-ai.rn4263313.workers.dev**.
+1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys with `wrangler deploy` (config in `web/wrangler.jsonc`). Live at **https://devmate-ai.rn4263313.workers.dev**.
 2. **Backend, whenever you want it online:** double-click **`DevMate Online.command`** on the Desktop, or run `./deploy/cloudflare-tunnel.sh`. It starts the locked-down backend and a free tunnel, then saves the tunnel address in Cloudflare KV, so the site link **never changes**. The site's Worker serves `/backend-url` and the app picks the address up automatically.
    - On a new browser or device, open the token link the script prints once; after that, just open `https://devmate-ai.rn4263313.workers.dev`.
 

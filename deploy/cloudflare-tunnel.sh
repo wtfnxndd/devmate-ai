@@ -20,7 +20,7 @@ trap 'kill $BACKEND 2>/dev/null' EXIT
 LOG=/tmp/devmate-tunnel.log
 "$CLOUDFLARED" tunnel --no-autoupdate --url http://localhost:8000 > "$LOG" 2>&1 &
 TUNNEL=$!
-trap 'kill $BACKEND $TUNNEL 2>/dev/null; (cd ../frontend && npx --yes wrangler@4 kv key delete --binding DEVMATE_CONFIG --remote api_url >/dev/null 2>&1)' EXIT
+trap 'kill $BACKEND $TUNNEL 2>/dev/null; (cd ../web && npx --yes wrangler@4 kv key delete --binding DEVMATE_CONFIG --remote api_url >/dev/null 2>&1)' EXIT
 
 for _ in $(seq 1 30); do
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOG" | head -1)
@@ -30,7 +30,7 @@ done
 [ -z "$URL" ] && { echo "Tunnel failed to start, see $LOG"; exit 1; }
 
 # Publish the new address so the permanent site link finds this backend automatically.
-(cd ../frontend && npx --yes wrangler@4 kv key put --binding DEVMATE_CONFIG --remote api_url "$URL" >/dev/null 2>&1) \
+(cd ../web && npx --yes wrangler@4 kv key put --binding DEVMATE_CONFIG --remote api_url "$URL" >/dev/null 2>&1) \
   && PUBLISHED=1 || echo "(Could not publish the URL to Cloudflare; use the full link below.)"
 
 echo

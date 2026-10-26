@@ -1,4 +1,4 @@
-"""Free LLM access with automatic fallback: Gemini API -> Groq -> (optional) local Ollama.
+"""Free LLM access with automatic fallback: Groq -> Gemini API -> (optional) local Ollama.
 
 All three expose an OpenAI-compatible endpoint, so one client library covers them.
 Responses are cached in the database, so re-analysing unchanged code costs no API calls.
@@ -41,16 +41,17 @@ def _retry_after(err: Exception) -> float:
 
 def _providers():
     p = []
-    if settings.gemini_api_key:
-        gemini = OpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                        api_key=settings.gemini_api_key, max_retries=0, timeout=45)
-        # Comma-separated list: if one free model is overloaded (503), the next one is tried.
-        for model in settings.gemini_model.split(","):
-            p.append((f"gemini:{model.strip()}", model.strip(), gemini))
+    # Groq first: it answers in seconds; Gemini models follow as the fallback chain.
     if settings.groq_api_key:
         groq = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key, max_retries=0, timeout=90)
         for model in settings.groq_model.split(","):
             p.append((f"groq:{model.strip()}", model.strip(), groq))
+    if settings.gemini_api_key:
+        gemini = OpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                        api_key=settings.gemini_api_key, max_retries=0, timeout=30)
+        # Comma-separated list: if one free model is overloaded (503), the next one is tried.
+        for model in settings.gemini_model.split(","):
+            p.append((f"gemini:{model.strip()}", model.strip(), gemini))
     if settings.ollama_url:
         p.append(("ollama", settings.ollama_model,
                   OpenAI(base_url=settings.ollama_url.rstrip("/") + "/v1", api_key="ollama", timeout=300)))
@@ -87,6 +88,8 @@ def ask(prompt: str, system: str = SYSTEM_PROMPT, use_cache: bool = True, histor
         except Exception as e:  # rate limit / outage -> try the next free provider
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 _cooldown[name] = time.time() + _retry_after(e)
+            elif "timed out" in str(e).lower() or "404" in str(e):
+                _cooldown[name] = time.time() + 600  # slow or retired model: skip it for 10 minutes
             log.warning("LLM provider %s failed: %s", name, str(e)[:200])
             errors.append(f"{name}: {str(e)[:160]}")
     raise NoLLMAvailable("All LLM providers failed — " + " | ".join(errors))

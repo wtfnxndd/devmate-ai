@@ -1,12 +1,12 @@
-// Cloudflare Workers deploy for the Flutter web build (free tier).
-// Deploy: flutter build web --release && npx wrangler deploy
+// Cloudflare Workers deploy for the React web app (free tier).
+// Deploy: npm run build && npx wrangler deploy
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "devmate-ai",
   "main": "worker.js",
   "compatibility_date": "2026-10-19",
   "assets": {
-    "directory": "build/web",
+    "directory": "dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/backend-url"]
