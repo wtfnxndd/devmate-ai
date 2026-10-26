@@ -151,8 +151,8 @@ Browser ──► Cloudflare Workers static assets (Flutter web app)
 
 The backend needs Python tools (Tree-sitter, Bandit, ChromaDB) that can't run on Cloudflare Workers. It runs on your machine, and Cloudflare Tunnel publishes it securely with no port forwarding and no account needed.
 
-1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys with `wrangler deploy` (config in `frontend/wrangler.jsonc`). Live at **https://devmate-ai.way2fashion-ai.workers.dev**.
-2. **Backend, whenever you want it online:** `./deploy/cloudflare-tunnel.sh`. It prints a private link like `https://devmate-ai.way2fashion-ai.workers.dev/?api=https://xxxx.trycloudflare.com&token=…`. Open it, and the app remembers the backend URL and token.
+1. **Frontend, one time:** `./deploy/cloudflare-pages.sh`. It opens a browser to log in to Cloudflare, then deploys with `wrangler deploy` (config in `frontend/wrangler.jsonc`). Live at **https://devmate-ai.rn4263313.workers.dev**.
+2. **Backend, whenever you want it online:** `./deploy/cloudflare-tunnel.sh`. It prints a private link like `https://devmate-ai.rn4263313.workers.dev/?api=https://xxxx.trycloudflare.com&token=…`. Open it, and the app remembers the backend URL and token.
 
 When the backend runs through the tunnel it requires the access token (stored in `backend/.api_token`), and **local-folder import is disabled**, so nobody can read files on your computer.
 
