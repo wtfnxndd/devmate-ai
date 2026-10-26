@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")/../backend"
 CLOUDFLARED="${CLOUDFLARED:-$HOME/development/bin/cloudflared}"
-PAGES_URL="${PAGES_URL:-https://devmate-ai.pages.dev}"
+PAGES_URL="${PAGES_URL:-https://devmate-ai.way2fashion-ai.workers.dev}"
 
 TOKEN_FILE=.api_token
 [ -f "$TOKEN_FILE" ] || python3 -c "import secrets; print(secrets.token_urlsafe(24))" > "$TOKEN_FILE"

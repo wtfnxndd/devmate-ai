@@ -1,0 +1,11 @@
+// Cloudflare Workers static-assets deploy for the Flutter web build (free tier).
+// Deploy: flutter build web --release && npx wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "devmate-ai",
+  "compatibility_date": "2026-10-19",
+  "assets": {
+    "directory": "build/web",
+    "not_found_handling": "single-page-application"
+  }
+}
