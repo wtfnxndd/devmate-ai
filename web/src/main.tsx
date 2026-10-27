@@ -1,5 +1,6 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
+import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
 
 import App from "./App"
@@ -14,7 +15,9 @@ initApi().finally(() => {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-        <App />
+        <MotionConfig reducedMotion="user">
+          <App />
+        </MotionConfig>
         <Toaster position="bottom-right" />
       </ThemeProvider>
     </StrictMode>,

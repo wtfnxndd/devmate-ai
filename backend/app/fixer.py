@@ -53,12 +53,14 @@ def apply_fix(pid: int, root: Path, rel: str, start: int, original: str, fixed: 
     return {"file": rel, "line": idx + 1, "removed": len(orig), "added": len(fixed.split("\n"))}
 
 
-def fix_all(pid: int, root: Path, findings: list, limit: int = 8) -> dict:
+def fix_all(pid: int, root: Path, findings: list, limit: int = 8, on_event=None) -> dict:
     """Generates and applies fixes for the most severe findings, bottom-up per file so line numbers stay valid."""
     targets = [f for f in findings if f["severity"] in ("high", "medium") and f["rule"] not in SKIP_RULES][:limit]
     targets.sort(key=lambda f: (f["file"], -f["line"]))
     applied, failed = [], []
     for f in targets:
+        if on_event:
+            on_event("fixing", _brief(f))
         try:
             fix = engines.fix_finding(root, f)
             if not fix.get("fixed") or fix["fixed"].strip() == fix["original"].strip():
@@ -66,8 +68,12 @@ def fix_all(pid: int, root: Path, findings: list, limit: int = 8) -> dict:
                 continue
             res = apply_fix(pid, root, f["file"], fix["start"], fix["original"], fix["fixed"])
             applied.append({**_brief(f), **res})
+            if on_event:
+                on_event("fixed", {**_brief(f), **res, "original": fix["original"][:4000], "fixed": fix["fixed"][:4000]})
         except Exception as e:  # keep going: one bad fix must not stop the batch
             failed.append({**_brief(f), "reason": str(e)[:200]})
+            if on_event:
+                on_event("skipped", failed[-1])
     return {"applied": applied, "failed": failed}
 
 

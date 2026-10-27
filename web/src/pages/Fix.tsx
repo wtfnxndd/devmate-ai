@@ -8,10 +8,11 @@ import { Card } from "@/components/ui/card"
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog"
-import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Slider } from "@/components/ui/slider"
 import { api, download, saveText } from "@/lib/api"
 import { useProject } from "@/pages/ProjectLayout"
+import { motion } from "motion/react"
+import { ScanningCode } from "@/components/fix-animation"
 
 export default function Fix() {
   const { pid, project, reanalyze } = useProject()
@@ -55,7 +56,12 @@ export default function Fix() {
             {busy ? <Loader2 className="animate-spin" /> : <Wand2 />} Fix with AI
           </Button>
         </div>
-        {busy && <ShimmeringText text="Generating and applying patches…" className="text-sm" />}
+        {busy && (
+          <ScanningCode
+            label="Generating and applying patches…"
+            code={"# DevMate is reviewing the top issues\n# writing a minimal patch for each\n# applying and checking it fits the file\n…"}
+          />
+        )}
         <div className="flex flex-wrap gap-2 border-t pt-5">
           <Button variant="outline" onClick={reanalyze} disabled={busy || !c.files.length}><ShieldCheck /> Re-analyze to verify</Button>
           <Button variant="outline" onClick={() => download(`/projects/${pid}/export/zip`, `${name}-devmate.zip`).catch((e) => toast.error(e.message))}>
@@ -123,7 +129,11 @@ export default function Fix() {
       )}
 
       <Section title="Changes" actions={patch ? <CopyButton text={patch} label="Copy patch" /> : undefined}>
-        {patch ? <PatchLines lines={patch.split("\n")} /> : (
+        {patch ? (
+          <motion.div key={patch.length} initial={{ opacity: 0, clipPath: "inset(0 0 100% 0)" }} animate={{ opacity: 1, clipPath: "inset(0 0 0% 0)" }} transition={{ duration: 0.9, ease: "easeOut" }}>
+            <PatchLines lines={patch.split("\n")} />
+          </motion.div>
+        ) : (
           <p className="text-muted-foreground text-sm">No changes yet. Use "Fix with AI" here, or "Apply to project" on a single finding.</p>
         )}
         {patch && <p className="text-muted-foreground mt-3 font-mono text-xs">git apply {name}-devmate.patch</p>}

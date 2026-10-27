@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { useProject } from "@/pages/ProjectLayout"
 
 export default function Dependencies() {
@@ -21,10 +22,12 @@ export default function Dependencies() {
         <EmptyState icon={<PackageCheck className="size-8" />} title="No pinned dependencies found" description="Supported: requirements*.txt, pyproject.toml, package.json, pubspec.yaml, go.mod" />
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
             <Stat label="Dependencies" value={deps.length} />
             <Stat label="Vulnerable" value={d.vulnerable} tone={d.vulnerable ? "bad" : "good"} />
             <Stat label="Known CVEs" value={d.total_vulns} tone={d.total_vulns ? "warn" : "good"} />
+            <Stat label="License risk" value={(d.license_counts?.high ?? 0) + (d.license_counts?.review ?? 0)} hint="copyleft / review" tone={d.license_counts?.high ? "bad" : d.license_counts?.review ? "warn" : "good"} />
+            <Stat label="No license" value={d.license_counts?.unknown ?? 0} tone={d.license_counts?.unknown ? "warn" : "good"} />
           </div>
           {d.online === false && <ErrorNote error={`OSV.dev unreachable: ${d.error}`} />}
           <div className="space-y-2">
@@ -37,6 +40,15 @@ export default function Dependencies() {
                     <div className="font-medium">{dep.name} <span className="text-muted-foreground font-mono text-sm">{dep.version}</span></div>
                     <div className="text-muted-foreground text-xs">{dep.ecosystem} · {dep.manifest}</div>
                   </div>
+                  {dep.license_risk && (
+                    <Badge
+                      variant="outline"
+                      title={dep.license_note}
+                      className={cn("hidden md:inline-flex", dep.license_risk === "high" && "text-sev-high border-sev-high/30", (dep.license_risk === "review" || dep.license_risk === "unknown") && "text-sev-medium border-sev-medium/30")}
+                    >
+                      {dep.license ?? "no license"}
+                    </Badge>
+                  )}
                   {vulns.length ? (
                     <>
                       {dep.upgrade_to && <Badge variant="outline" className="text-good border-good/30 hidden sm:inline-flex">Upgrade to ≥ {dep.upgrade_to}</Badge>}

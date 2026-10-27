@@ -41,6 +41,11 @@ Review  Docs     Tests     Debug      Chat    Health report
 | One-click AI fix | Every finding has **Fix with AI**, which shows a before/after diff with an explanation. |
 | File assistants | For any file: **Explain**, **Refactor**, **Add docs** (docstrings, JSDoc, Dartdoc…) and **Tests**. |
 | Health trend | The score is recorded on every re-analysis and charted on the dashboard. |
+| **AI agent** | An autonomous loop: fix the top issues, re-analyze to verify, and repeat while the health score improves. Live timeline, before/after score, and an animated view of each patch. |
+| **Secrets scanner** | 25+ credential formats (AWS, GitHub, Stripe, OpenAI, Google, Slack, database URLs, private keys, JWTs…) plus high-entropy strings, across code and config files (.env, YAML, JSON). Values are masked. |
+| **License compliance** | Each dependency's license from deps.dev / PyPI, classified as permissive, weak copyleft, strong or network copyleft, or unknown. |
+| **Hotspots** | Risk = complexity × issues × git churn, a treemap risk map, a maintainability index (0–100), and per-file quality trends across analyses. |
+| **Motion** | Animated fixes (scanning beam, strike-through, rewrite, check mark), count-up scores, page transitions and staggered cards. Respects the OS "reduce motion" setting. |
 | Commit message and PR description | After applying fixes, writes a Conventional Commits message and a pull-request description (summary, changes, security impact, how to test). |
 | **Fix the project** | **Fix with AI** patches the top issues automatically, or use **Apply to project** on a single finding. Review the coloured diff, re-analyze to verify, then download the **fixed project (ZIP)** or a **.patch** (`git apply`) for your repo. **Revert all** restores the originals. |
 | Code duplication finder | Detects copy-pasted blocks of 6+ meaningful lines across files (like PMD CPD or jscpd), shows the duplication % and offers an AI DRY-refactor suggestion. |

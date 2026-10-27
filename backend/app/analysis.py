@@ -13,18 +13,16 @@ import lizard
 
 from .duplication import as_findings as duplication_findings
 from .duplication import find_duplicates
+from .secrets_scan import as_findings as secret_findings
+from .secrets_scan import scan as scan_secrets
 
 from .ingest import IGNORED_DIRS, iter_source_files
 
 BIN = Path(sys.executable).parent
 SEVERITY_WEIGHT = {"high": 10, "medium": 4, "low": 1}
 
-# OWASP-style regex rules that work for every language.
+# OWASP-style regex rules that work for every language (credentials are handled by secrets_scan).
 SECRET_RULES = [
-    ("hardcoded-secret", "high", "A02 Cryptographic Failures",
-     re.compile(r"""(?i)(password|passwd|secret|api_?key|token)\s*[:=]\s*['"][^'"\s]{6,}['"]""")),
-    ("aws-access-key", "high", "A02 Cryptographic Failures", re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("private-key", "high", "A02 Cryptographic Failures", re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----")),
     ("sql-string-concat", "medium", "A03 Injection",
      re.compile(r"""(?i)(execute|query)\s*\(\s*['"`](select|insert|update|delete)[^'"`]*['"`]\s*(\+|%|\.format|\$\{)""")),
     ("eval-usage", "high", "A03 Injection", re.compile(r"\beval\s*\(")),
@@ -163,7 +161,9 @@ def run_analysis(root: Path) -> dict:
     has_python = any(lang == "python" for _, lang, _ in files)
     funcs, smells, avg_cc = _complexity(files)
     duplication = find_duplicates(root)
-    findings = _regex_rules(files) + smells + _semgrep(root) + duplication_findings(duplication)
+    secrets = scan_secrets(root)
+    findings = (_regex_rules(files) + smells + _semgrep(root) + duplication_findings(duplication)
+                + secret_findings(secrets))
     if has_python:
         findings += _bandit(root) + _ruff(root)
     # Test code legitimately uses fake secrets, asserts and weak hashes; don't report those as vulnerabilities.
@@ -183,7 +183,7 @@ def run_analysis(root: Path) -> dict:
         "health_score": score,
         "grade": grade(score),
         "counts": counts, "by_category": by_cat, "avg_complexity": avg_cc,
-        "complex_functions": funcs[:15], "findings": findings[:500], "duplication": duplication,
-        "tools": ["lizard", "devmate-rules"] + (["bandit", "ruff"] if has_python else [])
+        "complex_functions": funcs[:15], "findings": findings[:500], "duplication": duplication, "secrets": secrets,
+        "tools": ["lizard", "devmate-rules", "devmate-secrets"] + (["bandit", "ruff"] if has_python else [])
                  + (["semgrep"] if shutil.which("semgrep") else []),
     }

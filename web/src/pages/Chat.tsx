@@ -9,6 +9,7 @@ import { Response } from "@/components/ui/response"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Textarea } from "@/components/ui/textarea"
 import { api, streamAi } from "@/lib/api"
+import { motion } from "motion/react"
 import { ProviderBadge } from "@/components/devmate"
 import { useProject } from "@/pages/ProjectLayout"
 
@@ -74,7 +75,8 @@ export default function Chat() {
             </ConversationEmptyState>
           ) : (
             msgs.map((m, i) => (
-              <Message key={i} from={m.role}>
+              <motion.div key={i} initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.3 }}>
+              <Message from={m.role}>
                 <MessageContent variant={m.role === "user" ? "contained" : "flat"}>
                   {m.role === "user" ? m.content : <Response>{m.content}</Response>}
                   {(m.sources || m.provider) && (
@@ -85,6 +87,7 @@ export default function Chat() {
                   )}
                 </MessageContent>
               </Message>
+              </motion.div>
             ))
           )}
           {sending && (

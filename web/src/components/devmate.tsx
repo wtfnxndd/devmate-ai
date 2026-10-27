@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Check, Copy, Download, FileText, RefreshCw, Sparkles, Square, Wand2 } from "lucide-react"
+import { motion } from "motion/react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 
@@ -9,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Response } from "@/components/ui/response"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CountUp, EASE } from "@/components/motion"
 import { download, providerLabel, saveText, streamAi, type AiResult, type Severity } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -80,7 +82,7 @@ export function Section({ title, icon, actions, children, className }: {
 
 export function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: string; tone?: "good" | "bad" | "warn" }) {
   return (
-    <Card className="gap-1 px-5 py-4 shadow-none">
+    <Card className="hover:border-foreground/20 gap-1 px-5 py-4 shadow-none transition-all duration-300 hover:-translate-y-0.5">
       <div className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{label}</div>
       <div
         className={cn(
@@ -90,7 +92,7 @@ export function Stat({ label, value, hint, tone }: { label: string; value: React
           tone === "warn" && "text-sev-medium",
         )}
       >
-        {value}
+        {typeof value === "number" ? <CountUp value={value} decimals={Number.isInteger(value) ? 0 : 1} /> : value}
       </div>
       {hint && <div className="text-muted-foreground text-xs">{hint}</div>}
     </Card>
@@ -119,14 +121,15 @@ export function ScoreRing({ score, grade, size = 120 }: { score?: number | null;
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 100 100" className="size-full -rotate-90">
         <circle cx="50" cy="50" r={r} fill="none" stroke="var(--border)" strokeWidth="8" />
-        <circle
+        <motion.circle
           cx="50" cy="50" r={r} fill="none" stroke={scoreColor(score)} strokeWidth="8" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - pct)} style={{ transition: "stroke-dashoffset .8s ease" }}
+          strokeDasharray={c} initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c * (1 - pct) }}
+          transition={{ duration: 1.1, ease: EASE }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-semibold tabular-nums" style={{ fontSize: size * 0.26, color: scoreColor(score) }}>
-          {score ?? "–"}
+          {score == null ? "–" : <CountUp value={score} duration={1.1} />}
         </span>
         {grade && <span className="text-muted-foreground" style={{ fontSize: size * 0.1 }}>Grade {grade}</span>}
       </div>
@@ -393,7 +396,11 @@ export function AiPanel({ pid, kind, body, label, description, filename, pdf, au
         </div>
       )}
       {error && <ErrorNote error={error} />}
-      {shown && <Markdown>{shown}</Markdown>}
+      {shown && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE }}>
+          <Markdown>{shown}</Markdown>
+        </motion.div>
+      )}
     </div>
   )
 }

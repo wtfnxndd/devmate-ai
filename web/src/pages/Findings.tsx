@@ -4,17 +4,19 @@ import { Bug, Check, Loader2, Search, ShieldAlert, Sparkles, SprayCan, Wand2 } f
 import { toast } from "sonner"
 
 import {
-  CodeView, CopyButton, DiffView, EmptyState, ErrorNote, languageFor, Loading, Markdown, PageHeader, ProviderBadge, SeverityBadge, useApi,
+  CodeView, CopyButton, EmptyState, ErrorNote, languageFor, Loading, Markdown, PageHeader, ProviderBadge, SeverityBadge, useApi,
 } from "@/components/devmate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { api, streamAi, type Analysis, type Finding } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useProject } from "@/pages/ProjectLayout"
+import { AnimatedDiff, ScanningCode } from "@/components/fix-animation"
+import { AnimatePresence, motion } from "motion/react"
+import { EASE } from "@/components/motion"
 
 const CAT_ICON = { security: ShieldAlert, bug: Bug, smell: SprayCan }
 
@@ -64,7 +66,12 @@ export default function Findings() {
           {list.map((f, i) => {
             const Icon = CAT_ICON[f.category] ?? Bug
             return (
-              <button
+              <motion.button
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: Math.min(i, 12) * 0.03, ease: EASE }}
+                whileHover={{ x: 3 }}
                 key={i}
                 onClick={() => setSelected(f)}
                 className={cn(
@@ -79,14 +86,20 @@ export default function Findings() {
                 </div>
                 <p className="mt-2 line-clamp-2 text-sm">{f.message}</p>
                 <p className="text-muted-foreground mt-2 font-mono text-xs">{f.file}:{f.line} · {f.tool}</p>
-              </button>
+              </motion.button>
             )
           })}
         </div>
         <div className="xl:sticky xl:top-20 xl:self-start">
-          {selected ? <FindingDetail key={`${selected.file}:${selected.line}:${selected.rule}`} pid={pid} f={selected} /> : (
+          <AnimatePresence mode="wait">
+          {selected ? (
+            <motion.div key={`${selected.file}:${selected.line}:${selected.rule}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.3, ease: EASE }}>
+              <FindingDetail pid={pid} f={selected} />
+            </motion.div>
+          ) : (
             <EmptyState icon={<Sparkles className="size-8" />} title="Select a finding" description="See the code around it and generate a fix with AI." />
           )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -139,7 +152,9 @@ function FindingDetail({ pid, f }: { pid: number; f: Finding }) {
         <p className="mt-1 text-sm">{f.message}</p>
         <p className="text-muted-foreground mt-2 font-mono text-xs">{f.file}:{f.line} · {f.tool}{f.owasp && !f.owasp.startsWith("http") ? ` · ${f.owasp}` : ""}</p>
       </div>
-      {code == null ? <Loading rows={1} /> : (
+      {code == null ? <Loading rows={1} /> : busy ? (
+        <ScanningCode code={lines.slice(lo - 1, hi).join("\n")} label={provider?.startsWith("local:") ? "Local AI is writing a fix…" : "AI is writing a fix…"} />
+      ) : (
         <CodeView code={lines.slice(lo - 1, hi).join("\n")} lang={languageFor(f.file)} start={lo} highlight={f.line} />
       )}
       <div className="flex flex-wrap gap-2">
@@ -157,11 +172,10 @@ function FindingDetail({ pid, f }: { pid: number; f: Finding }) {
         {applied && <Button variant="ghost" asChild><Link to={`/p/${pid}/fix`}>Review changes →</Link></Button>}
       </div>
       <ProviderBadge provider={provider} />
-      {busy && !live && <ShimmeringText text="Writing a fix…" className="text-sm" />}
-      {busy && live && <Markdown>{live}</Markdown>}
+      {busy && live && <div className="text-muted-foreground max-h-40 overflow-hidden text-xs [mask-image:linear-gradient(transparent,black_40%)]"><Markdown>{live.slice(-600)}</Markdown></div>}
       {fix && !busy && (
         <div className="space-y-4">
-          {fix.fixed && <DiffView original={fix.original} fixed={fix.fixed} />}
+          {fix.fixed && <AnimatedDiff original={fix.original} fixed={fix.fixed} />}
           <Markdown>{fix.explanation ?? ""}</Markdown>
         </div>
       )}

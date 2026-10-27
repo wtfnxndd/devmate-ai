@@ -1,7 +1,9 @@
 """Phase 1: project ingestion from ZIP upload, GitHub URL or local directory."""
 import io
+import os
 import re
 import shutil
+import subprocess
 import uuid
 import zipfile
 from pathlib import Path
@@ -50,11 +52,32 @@ def from_zip(data: bytes) -> Path:
     return _unwrap_single_dir(d)
 
 
+def _git_clone(owner: str, repo: str, branch: str | None) -> Path | None:
+    """Shallow clone with recent history (for churn / hotspots). Returns None if git isn't usable."""
+    d = _new_dir() / repo
+    url = f"https://github.com/{owner}/{repo}.git"
+    if settings.github_token:
+        url = f"https://x-access-token:{settings.github_token}@github.com/{owner}/{repo}.git"
+    cmd = ["git", "clone", "--quiet", "--depth", "300", "--single-branch", "--no-tags", url, str(d)]
+    if branch:
+        cmd[2:2] = ["--branch", branch]
+    try:
+        subprocess.run(cmd, check=True, timeout=180, capture_output=True,
+                       env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        return d
+    except Exception:
+        shutil.rmtree(d.parent, ignore_errors=True)
+        return None
+
+
 def from_github(url: str) -> Path:
     m = re.match(r"https?://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:/tree/([^/]+))?/?$", url.strip())
     if not m:
         raise ValueError("Expected a URL like https://github.com/owner/repo")
     owner, repo, branch = m.groups()
+    cloned = _git_clone(owner, repo, branch)
+    if cloned:
+        return cloned
     headers = {"Authorization": f"Bearer {settings.github_token}"} if settings.github_token else {}
     api = f"https://api.github.com/repos/{owner}/{repo}/zipball" + (f"/{branch}" if branch else "")
     r = httpx.get(api, headers=headers, follow_redirects=True, timeout=120)

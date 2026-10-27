@@ -5,6 +5,8 @@ import { toast } from "sonner"
 
 import { BackendSettings, Logo, ThemeToggle } from "@/components/chrome"
 import { ScoreRing } from "@/components/devmate"
+import { EASE, FadeIn, Stagger, StaggerItem } from "@/components/motion"
+import { motion } from "motion/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -90,13 +92,21 @@ export default function Home() {
         <Badge variant="secondary" className="mb-6 rounded-full px-3 py-1 font-normal">
           Free · Local AI · OWASP scanning · dependency CVEs · AI fixes
         </Badge>
-        <h1 className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
+        <motion.h1
+          className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl"
+          initial={{ opacity: 0, y: 18, filter: "blur(8px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          transition={{ duration: 0.8, ease: EASE }}
+        >
           The AI engineer that reviews, fixes and documents your code
-        </h1>
-        <p className="text-muted-foreground mx-auto mt-5 max-w-xl text-base text-balance">
+        </motion.h1>
+        <motion.p
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15, ease: EASE }}
+          className="text-muted-foreground mx-auto mt-5 max-w-xl text-base text-balance">
           Import a repository and get a health score, security findings, one-click fixes, tests, docs and a PDF report.
-        </p>
+        </motion.p>
 
+        <FadeIn delay={0.25}>
         <form
           className="bg-card mx-auto mt-10 flex max-w-2xl flex-col gap-2 rounded-full border p-1.5 shadow-sm sm:flex-row"
           onSubmit={(e) => {
@@ -133,6 +143,7 @@ export default function Home() {
             <FileArchive /> or upload a .zip
           </Button>
         </div>
+        </FadeIn>
       </section>
 
       <main className="mx-auto max-w-6xl px-6 pb-24">
@@ -155,9 +166,11 @@ export default function Home() {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects?.map((p) => <ProjectCard key={p.id} p={p} onChange={() => load()} />)}
-        </div>
+        {projects && projects.length > 0 && (
+          <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p) => <StaggerItem key={p.id}><ProjectCard p={p} onChange={() => load()} /></StaggerItem>)}
+          </Stagger>
+        )}
       </main>
     </div>
   )
@@ -170,7 +183,7 @@ function ProjectCard({ p, onChange }: { p: ProjectSummary; onChange: () => void 
   const langs = Object.keys(p.summary?.languages ?? {}).slice(0, 3)
 
   const body = (
-    <Card className="hover:border-foreground/25 h-full flex-row items-center gap-5 p-5 shadow-none transition-colors">
+    <Card className="hover:border-foreground/25 h-full flex-row items-center gap-5 p-5 shadow-none transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
       {ready ? (
         <ScoreRing score={p.health_score} size={76} />
       ) : (

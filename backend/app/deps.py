@@ -148,3 +148,68 @@ def scan(root: Path) -> dict:
         "vulnerable": sum(1 for d in deps if d["vulns"]),
         "total_vulns": sum(len(d["vulns"]) for d in deps),
     }
+
+
+# ---------------------------------------------------------------- license compliance
+DEPSDEV = {"PyPI": "pypi", "npm": "npm", "Go": "go"}
+COPYLEFT_STRONG = ("AGPL", "GPL-2", "GPL-3", "GPL ", "GPLV", "SSPL", "EUPL", "OSL")
+COPYLEFT_WEAK = ("LGPL", "MPL", "EPL", "CDDL", "CPL")
+PERMISSIVE = ("MIT", "BSD", "APACHE", "ISC", "ZLIB", "UNLICENSE", "0BSD", "PSF", "PYTHON", "CC0", "BSL-1.0", "WTFPL", "X11")
+
+
+def classify_license(lic: str | None) -> tuple[str, str]:
+    """-> (risk, explanation). risk: ok | review | high | unknown"""
+    if not lic:
+        return "unknown", "No license found: you may not have permission to use it."
+    u = lic.upper()
+    if any(x in u for x in COPYLEFT_WEAK):
+        return "review", "Weak copyleft: changes to this library must stay open source; usually fine to use."
+    if "AGPL" in u or "SSPL" in u:
+        return "high", "Network copyleft: offering the app as a service can require publishing your whole source."
+    if any(x in u for x in COPYLEFT_STRONG):
+        return "high", "Strong copyleft: distributing your app may require releasing your source under the same license."
+    if any(x in u for x in PERMISSIVE):
+        return "ok", "Permissive: free to use commercially with attribution."
+    return "review", "Uncommon license: read it before shipping."
+
+
+def _pypi_license(name: str, version: str) -> str | None:
+    try:
+        info = httpx.get(f"https://pypi.org/pypi/{name}/{version}/json", timeout=15).json()["info"]
+    except Exception:
+        return None
+    if info.get("license_expression"):
+        return info["license_expression"]
+    classifiers = [c.split("::")[-1].strip() for c in info.get("classifiers", []) if c.startswith("License ::")]
+    if classifiers:
+        return classifiers[0].replace(" License", "")
+    lic = (info.get("license") or "").strip()
+    return lic.splitlines()[0][:60] if lic else None
+
+
+def _license_for(dep: dict) -> str | None:
+    lic = None
+    system = DEPSDEV.get(dep["ecosystem"])
+    if system:
+        name = dep["name"].replace("/", "%2F")
+        try:
+            r = httpx.get(f"https://api.deps.dev/v3/systems/{system}/packages/{name}/versions/{dep['version']}", timeout=15)
+            if r.status_code == 200:
+                lics = [x for x in r.json().get("licenses", []) if x and x != "non-standard"]
+                lic = " AND ".join(lics) or None
+        except Exception:
+            pass
+    if not lic and dep["ecosystem"] == "PyPI":
+        lic = _pypi_license(dep["name"], dep["version"])
+    return lic
+
+
+def add_licenses(result: dict) -> dict:
+    deps = result.get("dependencies", [])
+    with ThreadPoolExecutor(8) as pool:
+        lics = list(pool.map(_license_for, deps))
+    for d, lic in zip(deps, lics):
+        d["license"] = lic
+        d["license_risk"], d["license_note"] = classify_license(lic)
+    result["license_counts"] = {k: sum(1 for d in deps if d.get("license_risk") == k) for k in ("ok", "review", "high", "unknown")}
+    return result

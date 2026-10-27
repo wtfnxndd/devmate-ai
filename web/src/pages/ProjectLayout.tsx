@@ -2,12 +2,13 @@ import { useCallback, useState } from "react"
 import { Link, NavLink, Outlet, useLocation, useOutletContext, useParams } from "react-router-dom"
 import {
   ArrowLeft, BookOpen, Boxes, Bug, Copy, FileCode2, FlaskConical, GitCompare, LayoutDashboard, Loader2,
-  MessagesSquare, Network, RefreshCw, ScrollText, Stethoscope, Wand2, ClipboardCheck, Cpu,
+  MessagesSquare, Network, RefreshCw, ScrollText, Stethoscope, Wand2, ClipboardCheck, Cpu, KeyRound, Flame, Bot,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Logo, ThemeToggle } from "@/components/chrome"
 import { useApi } from "@/components/devmate"
+import { PageTransition } from "@/components/motion"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -20,6 +21,8 @@ const NAV = [
   { group: "Analysis", items: [
     { to: "", label: "Dashboard", icon: LayoutDashboard },
     { to: "findings", label: "Findings", icon: Bug },
+    { to: "security", label: "Secrets", icon: KeyRound },
+    { to: "hotspots", label: "Hotspots", icon: Flame },
     { to: "dependencies", label: "Dependencies", icon: Boxes },
     { to: "files", label: "Files", icon: FileCode2 },
     { to: "architecture", label: "Architecture", icon: Network },
@@ -33,6 +36,7 @@ const NAV = [
     { to: "report", label: "Health report", icon: ScrollText },
   ] },
   { group: "Improve", items: [
+    { to: "agent", label: "AI agent", icon: Bot },
     { to: "fix", label: "Fix & export", icon: Wand2 },
     { to: "duplication", label: "Duplication", icon: Copy },
     { to: "compare", label: "Compare", icon: GitCompare },
@@ -130,7 +134,9 @@ export default function ProjectLayout() {
           </div>
         </header>
         <div className="mx-auto w-full max-w-6xl p-6 md:p-10" key={version}>
-          <Outlet context={{ pid, project: project ?? null, version, reanalyze } satisfies ProjectCtx} />
+          <PageTransition id={loc.pathname}>
+            <Outlet context={{ pid, project: project ?? null, version, reanalyze } satisfies ProjectCtx} />
+          </PageTransition>
         </div>
       </SidebarInset>
     </SidebarProvider>

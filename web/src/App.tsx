@@ -17,6 +17,9 @@ const Fix = lazy(() => import("@/pages/Fix"))
 const Duplication = lazy(() => import("@/pages/Duplication"))
 const Compare = lazy(() => import("@/pages/Compare"))
 const AiSettings = lazy(() => import("@/pages/AiSettings"))
+const Security = lazy(() => import("@/pages/Security"))
+const Hotspots = lazy(() => import("@/pages/Hotspots"))
+const Agent = lazy(() => import("@/pages/Agent"))
 
 export default function App() {
   return (
@@ -28,6 +31,9 @@ export default function App() {
           <Route path="/p/:pid" element={<ProjectLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="findings" element={<Findings />} />
+            <Route path="security" element={<Security />} />
+            <Route path="hotspots" element={<Hotspots />} />
+            <Route path="agent" element={<Agent />} />
             <Route path="dependencies" element={<Dependencies />} />
             <Route path="files" element={<Files />} />
             <Route path="architecture" element={<Architecture />} />

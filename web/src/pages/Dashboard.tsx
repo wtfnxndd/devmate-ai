@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { api, type Analysis } from "@/lib/api"
 import { useProject } from "@/pages/ProjectLayout"
+import { FadeIn, Stagger, StaggerItem } from "@/components/motion"
 
 const SEV = { high: "var(--sev-high)", medium: "var(--sev-medium)", low: "var(--sev-low)" }
 const LANG = ["#111", "#555", "#888", "#aaa", "#ccc", "#ddd"]
@@ -61,16 +62,16 @@ export default function Dashboard() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label="Files" value={s.files} />
-        <Stat label="Lines" value={s.lines.toLocaleString()} />
-        <Stat label="Functions" value={s.functions} hint={`${s.classes} classes`} />
-        <Stat label="Security" value={a.by_category.security} tone={a.by_category.security ? "bad" : "good"} />
-        <Stat label="Vuln. packages" value={deps.vulnerable} hint={`${deps.total_vulns} CVEs`} tone={deps.vulnerable ? "bad" : "good"} />
-        <Stat label="Duplication" value={`${a.duplication?.percentage ?? 0}%`} tone={(a.duplication?.percentage ?? 0) > 5 ? "warn" : "good"} />
-      </div>
+      <Stagger className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <StaggerItem><Stat label="Files" value={s.files} /></StaggerItem>
+        <StaggerItem><Stat label="Lines" value={s.lines} /></StaggerItem>
+        <StaggerItem><Stat label="Functions" value={s.functions} hint={`${s.classes} classes`} /></StaggerItem>
+        <StaggerItem><Stat label="Security" value={a.by_category.security} tone={a.by_category.security ? "bad" : "good"} /></StaggerItem>
+        <StaggerItem><Stat label="Vuln. packages" value={deps.vulnerable} hint={`${deps.total_vulns} CVEs`} tone={deps.vulnerable ? "bad" : "good"} /></StaggerItem>
+        <StaggerItem><Stat label="Duplication" value={`${a.duplication?.percentage ?? 0}%`} tone={(a.duplication?.percentage ?? 0) > 5 ? "warn" : "good"} /></StaggerItem>
+      </Stagger>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <FadeIn className="grid gap-4 lg:grid-cols-3">
         <Section title="Issues by severity">
           {total === 0 ? (
             <p className="text-muted-foreground py-10 text-center text-sm">No issues found</p>
@@ -128,9 +129,9 @@ export default function Dashboard() {
             ))}
           </div>
         </Section>
-      </div>
+      </FadeIn>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <FadeIn className="grid gap-4 lg:grid-cols-2">
         <Section
           title="Top findings"
           actions={<Button variant="ghost" size="sm" asChild><Link to={`/p/${pid}/findings`}>All <ArrowRight /></Link></Button>}
@@ -169,7 +170,7 @@ export default function Dashboard() {
             })}
           </div>
         </Section>
-      </div>
+      </FadeIn>
 
       {history.length > 1 && (
         <Section title="Health trend">

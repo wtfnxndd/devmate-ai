@@ -17,6 +17,7 @@ from sqlalchemy import select
 from datetime import datetime
 
 from . import deps as depscan
+from .hotspots import file_metrics
 from . import engines, fixer, ingest, llm, pdf, rag
 from .analysis import grade, run_analysis
 from .config import settings
@@ -127,21 +128,25 @@ def _pipeline(pid: int):
         _save(pid, status="analyzing", results={"structure": structure})
         analysis = run_analysis(root)
         _save(pid, status="scanning dependencies")
-        deps = depscan.scan(root)
+        deps = depscan.add_licenses(depscan.scan(root))
         # Known-vulnerable packages lower the health score (max 15 points).
         analysis["code_score"] = analysis["health_score"]
         analysis["health_score"] = max(0, analysis["health_score"] - min(15, deps["vulnerable"] * 3))
         analysis["grade"] = grade(analysis["health_score"])
+        hot = file_metrics(root, analysis["findings"])
         history = (_get(pid).results or {}).get("history", [])[-19:] + [{
             "at": datetime.utcnow().isoformat(timespec="seconds"), "score": analysis["health_score"],
             "counts": analysis["counts"], "vulnerable_deps": deps["vulnerable"],
             "duplication": analysis["duplication"]["percentage"],
+            "secrets": analysis["secrets"]["counts"]["high"],
+            # Compact per-file snapshot for quality trends: [risk, maintainability, issue weight].
+            "files": {f["file"]: [f["risk"], f["mi"], f["issue_weight"]] for f in hot["files"][:80]},
             # Line-independent identity of each finding, used to diff analyses (fixed vs new issues).
             "fingerprints": sorted({_fingerprint(f) for f in analysis["findings"]}),
         }]
         # Engine outputs depend on the old code, so drop them on re-analysis.
         stale = {k: None for k in ("review", "readme", "api_docs", "report")}
-        _save(pid, status="indexing", results={"analysis": analysis, "dependencies": deps, "history": history, **stale})
+        _save(pid, status="indexing", results={"analysis": analysis, "dependencies": deps, "hotspots": hot, "history": history, **stale})
         rag.index_chunks(pid, chunks)
         _save(pid, status="ready", results={"endpoints": engines.find_endpoints(root, structure)})
         log.info("Project %s ready: %s", pid, structure["summary"])
@@ -311,6 +316,24 @@ def report(pid: int, refresh: bool = False):
 @app.get("/api/projects/{pid}/dependencies")
 def dependencies(pid: int):
     return _require(_get(pid), "dependencies")
+
+
+@app.get("/api/projects/{pid}/hotspots")
+def hotspots(pid: int):
+    p = _get(pid)
+    hot = _require(p, "hotspots")
+    hist = (p.results or {}).get("history", [])
+    # Per-file trend across analyses (only snapshots that recorded files).
+    trend = {}
+    for h in hist:
+        for f, (risk, mi, iw) in (h.get("files") or {}).items():
+            trend.setdefault(f, []).append({"at": h["at"], "risk": risk, "mi": mi, "issues": iw})
+    return {**hot, "trends": trend, "analyses": len(hist)}
+
+
+@app.get("/api/projects/{pid}/secrets")
+def secrets(pid: int):
+    return _require(_get(pid), "analysis").get("secrets", {"secrets": [], "counts": {"high": 0, "medium": 0, "low": 0}})
 
 
 @app.get("/api/projects/{pid}/history")
@@ -547,6 +570,76 @@ def stream(pid: int, kind: str, body: dict = Body(default={}), refresh: bool = F
         except Exception as e:  # surface the reason to the UI instead of a broken stream
             log.exception("stream %s failed", kind)
             q.put(("error", str(e)))
+        finally:
+            q.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+    return StreamingResponse(_sse(q), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------- AI agent: fix → verify → repeat
+class AgentIn(BaseModel):
+    rounds: int = 3
+    per_round: int = 5
+
+
+@app.post("/api/projects/{pid}/agent")
+def agent(pid: int, body: AgentIn):
+    """Autonomous loop: fix the top issues, re-analyze to verify, repeat while the score improves.
+
+    Streams events: start, round, fixing, fixed, skipped, verified, stop, done, error.
+    """
+    p = _get(pid)
+    _require(p, "analysis")
+    if not llm.available():
+        raise HTTPException(400, "The agent needs AI: start Ollama or add a free GROQ_API_KEY / GEMINI_API_KEY")
+    root = Path(p.path)
+    q: queue.Queue = queue.Queue()
+    emit = lambda kind, data=None: q.put((kind, data))  # noqa: E731
+    dep_penalty = min(15, (p.results.get("dependencies") or {}).get("vulnerable", 0) * 3)
+
+    def score_of(a):
+        return max(0, a["health_score"] - dep_penalty)
+
+    def on_fix_event(kind, data):
+        if kind == "fixing":
+            data = {**data, "snippet": engines._snippet(root, data["file"], data["line"], 6)}
+        emit(kind, data)
+
+    def work():
+        try:
+            analysis = p.results["analysis"]
+            start = best = analysis["health_score"]
+            emit("start", {"score": start, "issues": len(analysis["findings"]), "rounds": body.rounds})
+            total = 0
+            for rnd in range(1, max(1, min(body.rounds, 6)) + 1):
+                emit("round", {"round": rnd, "score": best})
+                out = fixer.fix_all(pid, root, analysis["findings"], limit=max(1, min(body.per_round, 15)), on_event=on_fix_event)
+                total += len(out["applied"])
+                if not out["applied"]:
+                    emit("stop", {"reason": "No more issues the agent can fix automatically."})
+                    break
+                analysis = run_analysis(root)
+                new = score_of(analysis)
+                emit("verified", {"round": rnd, "before": best, "after": new, "applied": len(out["applied"]),
+                                  "issues": len(analysis["findings"])})
+                if new <= best:
+                    emit("stop", {"reason": "The score stopped improving, so the agent stopped to avoid churn."})
+                    best = max(best, new)
+                    break
+                best = new
+                if best >= 95:
+                    emit("stop", {"reason": "Excellent score reached."})
+                    break
+            _save(pid, results={"applied_fixes": (_get(pid).results or {}).get("applied_fixes", [])})
+            emit("finalizing", {"message": "Re-running the full analysis…"})
+            _pipeline(pid)
+            final = (_get(pid).results or {}).get("analysis", {}).get("health_score", best)
+            emit("done", {"start": start, "end": final, "fixes": total})
+        except Exception as e:
+            log.exception("agent failed")
+            emit("error", str(e))
         finally:
             q.put(None)
 
