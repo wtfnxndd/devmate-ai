@@ -332,7 +332,7 @@ def hotspots(pid: int):
 
 
 @app.get("/api/projects/{pid}/secrets")
-def secrets(pid: int):
+def project_secrets(pid: int):
     return _require(_get(pid), "analysis").get("secrets", {"secrets": [], "counts": {"high": 0, "medium": 0, "low": 0}})
 
 
