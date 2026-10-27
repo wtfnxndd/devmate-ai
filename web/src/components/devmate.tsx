@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Check, Copy, Download, FileText, RefreshCw, Sparkles, Wand2 } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Check, Copy, Download, FileText, RefreshCw, Sparkles, Square, Wand2 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Response } from "@/components/ui/response"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, download, saveText, type AiResult, type Severity } from "@/lib/api"
+import { download, providerLabel, saveText, streamAi, type AiResult, type Severity } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------- data hook
@@ -284,9 +284,21 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
   )
 }
 
-/** Runs an AI engine endpoint and shows the Markdown, with copy / .md / PDF download. */
-export function AiPanel({ endpoint, body, label, description, filename, pdf, autoRun, icon }: {
-  endpoint: string
+export function ProviderBadge({ provider }: { provider?: string | null }) {
+  if (!provider) return null
+  const local = provider.startsWith("local:")
+  return (
+    <Badge variant="outline" className="gap-1.5 font-normal">
+      <span className={cn("size-1.5 rounded-full", local ? "bg-good" : "bg-sev-low")} />
+      {providerLabel(provider)}
+    </Badge>
+  )
+}
+
+/** Runs an AI feature with live streaming and shows the Markdown, with copy / .md / PDF download. */
+export function AiPanel({ pid, kind, body, label, description, filename, pdf, autoRun, icon }: {
+  pid: number
+  kind: string
   body?: unknown
   label: string
   description?: string
@@ -296,27 +308,37 @@ export function AiPanel({ endpoint, body, label, description, filename, pdf, aut
   icon?: ReactNode
 }) {
   const [result, setResult] = useState<AiResult | null>(null)
+  const [live, setLive] = useState("")
+  const [provider, setProvider] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const abort = useRef<AbortController | null>(null)
 
   const run = useCallback(
     async (refresh = false) => {
+      abort.current?.abort()
+      abort.current = new AbortController()
       setLoading(true)
       setError(null)
+      setLive("")
+      setProvider(null)
       try {
-        setResult(await api.post<AiResult>(endpoint, body, refresh ? { refresh: "true" } : undefined))
+        const r = await streamAi(pid, kind, body, { onText: setLive, onProvider: setProvider }, { refresh, signal: abort.current.signal })
+        setResult(r)
       } catch (e) {
-        setError(String((e as Error).message))
+        if ((e as Error).name !== "AbortError") setError(String((e as Error).message))
       } finally {
         setLoading(false)
       }
     },
-    [endpoint, JSON.stringify(body)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pid, kind, JSON.stringify(body)],
   )
 
   useEffect(() => {
     if (autoRun) run()
+    return () => abort.current?.abort()
   }, [autoRun, run])
 
   const getPdf = async () => {
@@ -332,14 +354,22 @@ export function AiPanel({ endpoint, body, label, description, filename, pdf, aut
     }
   }
 
+  const shown = loading ? live : result?.markdown
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => run(result != null)} disabled={loading}>
-          {loading ? <RefreshCw className="animate-spin" /> : result ? <RefreshCw /> : icon ?? <Wand2 />}
-          {result ? "Regenerate" : label}
-        </Button>
-        {result && (
+        {loading ? (
+          <Button variant="outline" onClick={() => abort.current?.abort()}>
+            <Square /> Stop
+          </Button>
+        ) : (
+          <Button onClick={() => run(result != null)}>
+            {result ? <RefreshCw /> : icon ?? <Wand2 />}
+            {result ? "Regenerate" : label}
+          </Button>
+        )}
+        <ProviderBadge provider={provider} />
+        {result && !loading && (
           <>
             <AiBadge ai={result.ai} />
             <CopyButton text={result.markdown} />
@@ -355,16 +385,15 @@ export function AiPanel({ endpoint, body, label, description, filename, pdf, aut
         )}
       </div>
       {!result && !loading && description && <p className="text-muted-foreground text-sm">{description}</p>}
-      {loading && (
+      {loading && !live && (
         <div className="space-y-3 py-2">
-          <ShimmeringText text="DevMate is thinking…" className="text-sm" />
+          <ShimmeringText text={provider?.startsWith("local:") ? "Running on your computer…" : "DevMate is thinking…"} className="text-sm" />
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
         </div>
       )}
       {error && <ErrorNote error={error} />}
-      {result && !loading && <Markdown>{result.markdown}</Markdown>}
+      {shown && <Markdown>{shown}</Markdown>}
     </div>
   )
 }

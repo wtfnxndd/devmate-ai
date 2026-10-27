@@ -2,7 +2,7 @@ import { useCallback, useState } from "react"
 import { Link, NavLink, Outlet, useLocation, useOutletContext, useParams } from "react-router-dom"
 import {
   ArrowLeft, BookOpen, Boxes, Bug, Copy, FileCode2, FlaskConical, GitCompare, LayoutDashboard, Loader2,
-  MessagesSquare, Network, RefreshCw, ScrollText, Stethoscope, Wand2, ClipboardCheck,
+  MessagesSquare, Network, RefreshCw, ScrollText, Stethoscope, Wand2, ClipboardCheck, Cpu,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -11,7 +11,7 @@ import { useApi } from "@/components/devmate"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { api, type ProjectSummary } from "@/lib/api"
@@ -103,6 +103,13 @@ export default function ProjectLayout() {
             </SidebarGroup>
           ))}
         </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild><Link to="/ai"><Cpu /> <span>AI settings</span></Link></SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-w-0">
         <header className="bg-background/80 sticky top-0 z-10 flex h-14 items-center gap-2 border-b px-4 backdrop-blur">

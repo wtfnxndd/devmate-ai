@@ -328,3 +328,19 @@ def refactor_duplicate(root: Path, block: dict) -> dict:
               "location. Mention any small differences that need parameters.\n\n" + code)
     md, ai = _try_llm(prompt, fallback)
     return {"markdown": md, "ai": ai}
+
+
+def commit_message(name: str, patch: str, applied: list) -> dict:
+    """Conventional-commit message and a PR description for the fixes DevMate applied."""
+    if not patch.strip():
+        return {"markdown": "No changes yet. Apply some fixes first.", "ai": False}
+    rules = sorted({a.get("rule", "") for a in applied if a.get("rule")})
+    files = sorted({a.get("file", "") for a in applied if a.get("file")})
+    fallback = (f"```\nfix: resolve {len(applied)} code issue(s) found by DevMate\n\n"
+                + "\n".join(f"- {r}" for r in rules) + "\n```\n\n**Files:** " + ", ".join(f"`{f}`" for f in files))
+    prompt = (f"These changes were applied to the project '{name}' to fix static-analysis findings ({', '.join(rules)}).\n"
+              "Write:\n1. A Conventional Commits message (type(scope): summary, blank line, bullet body) in a ```text block.\n"
+              "2. A pull-request description with sections: Summary, Changes (per file), Security impact, How to test.\n\n"
+              f"```diff\n{patch[:12000]}\n```")
+    md, ai = _try_llm(prompt, fallback)
+    return {"markdown": md, "ai": ai}

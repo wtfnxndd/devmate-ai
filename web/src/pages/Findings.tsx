@@ -4,7 +4,7 @@ import { Bug, Check, Loader2, Search, ShieldAlert, Sparkles, SprayCan, Wand2 } f
 import { toast } from "sonner"
 
 import {
-  CodeView, CopyButton, DiffView, EmptyState, ErrorNote, languageFor, Loading, Markdown, PageHeader, SeverityBadge, useApi,
+  CodeView, CopyButton, DiffView, EmptyState, ErrorNote, languageFor, Loading, Markdown, PageHeader, ProviderBadge, SeverityBadge, useApi,
 } from "@/components/devmate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { api, type Analysis, type Finding } from "@/lib/api"
+import { api, streamAi, type Analysis, type Finding } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useProject } from "@/pages/ProjectLayout"
 
@@ -98,6 +98,8 @@ function FindingDetail({ pid, f }: { pid: number; f: Finding }) {
   const [fix, setFix] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [applied, setApplied] = useState(false)
+  const [live, setLive] = useState("")
+  const [provider, setProvider] = useState<string | null>(null)
 
   const lines = code?.split("\n") ?? []
   const lo = Math.max(1, f.line - 10), hi = Math.min(lines.length, f.line + 10)
@@ -106,7 +108,9 @@ function FindingDetail({ pid, f }: { pid: number; f: Finding }) {
     setBusy(true)
     setApplied(false)
     try {
-      setFix(await api.post(`/projects/${pid}/fix`, { file: f.file, line: f.line, rule: f.rule, message: f.message }))
+      setLive("")
+      setProvider(null)
+      setFix(await streamAi(pid, "fix", { file: f.file, line: f.line, rule: f.rule, message: f.message }, { onText: setLive, onProvider: setProvider }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -152,7 +156,9 @@ function FindingDetail({ pid, f }: { pid: number; f: Finding }) {
         )}
         {applied && <Button variant="ghost" asChild><Link to={`/p/${pid}/fix`}>Review changes →</Link></Button>}
       </div>
-      {busy && <ShimmeringText text="Writing a fix…" className="text-sm" />}
+      <ProviderBadge provider={provider} />
+      {busy && !live && <ShimmeringText text="Writing a fix…" className="text-sm" />}
+      {busy && live && <Markdown>{live}</Markdown>}
       {fix && !busy && (
         <div className="space-y-4">
           {fix.fixed && <DiffView original={fix.original} fixed={fix.fixed} />}

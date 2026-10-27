@@ -16,6 +16,7 @@ const Chat = lazy(() => import("@/pages/Chat"))
 const Fix = lazy(() => import("@/pages/Fix"))
 const Duplication = lazy(() => import("@/pages/Duplication"))
 const Compare = lazy(() => import("@/pages/Compare"))
+const AiSettings = lazy(() => import("@/pages/AiSettings"))
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
       <Suspense fallback={<div className="p-10"><Loading /></div>}>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/ai" element={<AiSettings />} />
           <Route path="/p/:pid" element={<ProjectLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="findings" element={<Findings />} />

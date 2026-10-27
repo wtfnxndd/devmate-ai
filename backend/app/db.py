@@ -46,5 +46,13 @@ class LLMCache(Base):
     response: Mapped[str] = mapped_column(Text)
 
 
+class AppSetting(Base):
+    """Settings changed from the UI (AI mode, local model)."""
+
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+
+
 def init_db():
     Base.metadata.create_all(engine)

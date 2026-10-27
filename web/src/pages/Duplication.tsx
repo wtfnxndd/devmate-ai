@@ -47,7 +47,7 @@ function Clone({ pid, index, block }: { pid: number; index: number; block: Dup["
       <CodeView code={block.snippet} lang={languageFor(first.file)} start={first.start} />
       {ai && (
         <div className="mt-5 border-t pt-5">
-          <AiPanel endpoint={`/projects/${pid}/duplicates/${index}/refactor`} label="Suggest refactor" filename={`refactor-duplicate-${index + 1}.md`} autoRun />
+          <AiPanel pid={pid} kind="duplicate-refactor" body={{ index }} label="Suggest refactor" filename={`refactor-duplicate-${index + 1}.md`} autoRun />
         </div>
       )}
     </Section>

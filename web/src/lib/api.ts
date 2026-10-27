@@ -97,6 +97,8 @@ export const api = {
     fetch(url(path, query), { headers: headers() }).then(handle),
   post: <T = any>(path: string, body?: unknown, query?: Record<string, string | number | undefined>): Promise<T> =>
     fetch(url(path, query), { method: "POST", headers: headers(true), body: JSON.stringify(body ?? {}) }).then(handle),
+  put: <T = any>(path: string, body?: unknown): Promise<T> =>
+    fetch(url(path), { method: "PUT", headers: headers(true), body: JSON.stringify(body ?? {}) }).then(handle),
   del: <T = any>(path: string): Promise<T> => fetch(url(path), { method: "DELETE", headers: headers() }).then(handle),
   text: (path: string, query?: Record<string, string>) => fetch(url(path, query), { headers: headers() }).then(handle) as Promise<string>,
   upload: (file: File) => {
@@ -104,6 +106,70 @@ export const api = {
     fd.append("file", file)
     return fetch(url("/projects/upload"), { method: "POST", headers: headers(), body: fd }).then(handle)
   },
+}
+
+export type StreamEvent =
+  | { type: "provider"; data: string }
+  | { type: "delta"; data: string }
+  | { type: "reset"; data: null }
+  | { type: "done"; data: any }
+  | { type: "error"; data: string }
+
+/** Reads a Server-Sent Events response (POST, with token) and calls onEvent for each event. */
+export async function readSSE(path: string, body: unknown, onEvent: (e: any) => void, signal?: AbortSignal) {
+  const r = await fetch(url(path), { method: "POST", headers: headers(true), body: JSON.stringify(body ?? {}), signal })
+  if (!r.ok || !r.body) await handle(r)
+  const reader = r.body!.getReader()
+  const dec = new TextDecoder()
+  let buf = ""
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let i
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i)
+      buf = buf.slice(i + 2)
+      const line = chunk.split("\n").find((l) => l.startsWith("data: "))
+      if (line) {
+        try {
+          onEvent(JSON.parse(line.slice(6)))
+        } catch {
+          /* ignore partial */
+        }
+      }
+    }
+  }
+}
+
+/** Runs an AI feature with live streaming. Resolves with the final result. */
+export async function streamAi(pid: number, kind: string, body: unknown, handlers: {
+  onText?: (fullText: string) => void
+  onProvider?: (name: string) => void
+}, opts: { refresh?: boolean; signal?: AbortSignal } = {}): Promise<any> {
+  let text = ""
+  let result: any = null
+  let error: string | null = null
+  await readSSE(`/projects/${pid}/stream/${kind}${opts.refresh ? "?refresh=true" : ""}`, body, (e: StreamEvent) => {
+    if (e.type === "provider") handlers.onProvider?.(e.data)
+    else if (e.type === "delta") { text += e.data; handlers.onText?.(text) }
+    else if (e.type === "reset") { text = ""; handlers.onText?.("") }
+    else if (e.type === "done") result = e.data
+    else if (e.type === "error") error = String((e as { data: unknown }).data)
+  }, opts.signal)
+  if (error) throw new ApiError(error, 500)
+  return result
+}
+
+/** Pretty label for a provider id like "local:qwen2.5-coder:3b" or "groq:openai/gpt-oss-120b". */
+export function providerLabel(p?: string | null) {
+  if (!p) return ""
+  const cached = p.endsWith("(cached)")
+  const base = p.replace(" (cached)", "")
+  const [kind, ...rest] = base.split(":")
+  const model = rest.join(":").split("/").pop()
+  const name = kind === "local" ? "Local" : kind === "groq" ? "Groq" : kind === "gemini" ? "Gemini" : kind
+  return `${name} · ${model}${cached ? " · cached" : ""}`
 }
 
 /** Triggers a real browser download (works on every browser, unlike file-picker plugins). */

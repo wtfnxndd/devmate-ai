@@ -8,10 +8,11 @@ import { Message, MessageContent } from "@/components/ui/message"
 import { Response } from "@/components/ui/response"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Textarea } from "@/components/ui/textarea"
-import { api } from "@/lib/api"
+import { api, streamAi } from "@/lib/api"
+import { ProviderBadge } from "@/components/devmate"
 import { useProject } from "@/pages/ProjectLayout"
 
-interface Msg { role: "user" | "assistant"; content: string; sources?: string }
+interface Msg { role: "user" | "assistant"; content: string; sources?: string; provider?: string }
 
 const SUGGESTIONS = ["Give me an overview of this codebase", "Where is the main entry point?", "Which parts are risky to change?", "How is data stored?"]
 
@@ -20,6 +21,8 @@ export default function Chat() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
+  const [live, setLive] = useState("")
+  const [provider, setProvider] = useState<string | null>(null)
 
   useEffect(() => {
     api.get<Msg[]>(`/projects/${pid}/chat`).then(setMsgs).catch(() => {})
@@ -31,14 +34,18 @@ export default function Chat() {
     setInput("")
     setMsgs((m) => [...m, { role: "user", content: t }])
     setSending(true)
+    setLive("")
+    setProvider(null)
+    let used: string | null = null
     try {
-      const r = await api.post(`/projects/${pid}/chat`, { message: t })
+      const r = await streamAi(pid, "chat", { message: t }, { onText: setLive, onProvider: (p) => { used = p; setProvider(p) } })
       const sources = (r.sources as any[]).map((s) => `\`${s.file}:${s.start}\``).join(" · ")
-      setMsgs((m) => [...m, { role: "assistant", content: r.markdown, sources }])
+      setMsgs((m) => [...m, { role: "assistant", content: r.markdown, sources, provider: used ?? undefined }])
     } catch (e) {
       setMsgs((m) => [...m, { role: "assistant", content: `Error: ${(e as Error).message}` }])
     } finally {
       setSending(false)
+      setLive("")
     }
   }
 
@@ -70,14 +77,24 @@ export default function Chat() {
               <Message key={i} from={m.role}>
                 <MessageContent variant={m.role === "user" ? "contained" : "flat"}>
                   {m.role === "user" ? m.content : <Response>{m.content}</Response>}
-                  {m.sources && <div className="text-muted-foreground border-t pt-2 text-xs">Sources: <Response>{m.sources}</Response></div>}
+                  {(m.sources || m.provider) && (
+                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t pt-2 text-xs">
+                      <ProviderBadge provider={m.provider} />
+                      {m.sources && <span className="flex flex-wrap gap-1">Sources: <Response>{m.sources}</Response></span>}
+                    </div>
+                  )}
                 </MessageContent>
               </Message>
             ))
           )}
           {sending && (
             <Message from="assistant">
-              <MessageContent variant="flat"><ShimmeringText text="Reading your code…" /></MessageContent>
+              <MessageContent variant="flat">
+                {live ? <Response>{live}</Response> : (
+                  <ShimmeringText text={provider?.startsWith("local:") ? "Running on your computer…" : "Reading your code…"} />
+                )}
+                {provider && <div><ProviderBadge provider={provider} /></div>}
+              </MessageContent>
             </Message>
           )}
         </ConversationContent>

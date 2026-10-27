@@ -89,7 +89,7 @@ function FileDetail({ pid, file }: { pid: number; file: string }) {
   const { data: code } = useApi(() => api.text(`/projects/${pid}/file`, { path: file }), [file])
   const name = file.split("/").pop()
   const assist = (task: string, label: string) => (
-    <AiPanel endpoint={`/projects/${pid}/file-assist`} body={{ file, task }} label={label} filename={`${name}.${task}.md`} autoRun />
+    <AiPanel pid={pid} kind="file-assist" body={{ file, task }} label={label} filename={`${name}.${task}.md`} autoRun />
   )
   return (
     <Card className="gap-4 p-6 shadow-none">
@@ -109,7 +109,7 @@ function FileDetail({ pid, file }: { pid: number; file: string }) {
         <TabsContent value="refactor" className="pt-3">{assist("refactor", "Suggest refactorings")}</TabsContent>
         <TabsContent value="docstrings" className="pt-3">{assist("docstrings", "Add documentation")}</TabsContent>
         <TabsContent value="tests" className="pt-3">
-          <AiPanel endpoint={`/projects/${pid}/tests`} body={{ file }} label="Generate unit tests" filename={`tests_${name}.md`} autoRun />
+          <AiPanel pid={pid} kind="tests" body={{ file }} label="Generate unit tests" filename={`tests_${name}.md`} autoRun />
         </TabsContent>
       </Tabs>
     </Card>

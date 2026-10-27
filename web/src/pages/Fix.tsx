@@ -2,7 +2,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleSlash, FileArchive, FileDiff, Loader2, RotateCcw, ShieldCheck, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { CopyButton, ErrorNote, Loading, PageHeader, PatchLines, Section, Stat, useApi } from "@/components/devmate"
+import { AiPanel, CopyButton, ErrorNote, Loading, PageHeader, PatchLines, Section, Stat, useApi } from "@/components/devmate"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
@@ -112,6 +112,13 @@ export default function Fix() {
               </div>
             ))}
           </div>
+        </Section>
+      )}
+
+      {patch && (
+        <Section title="Commit message & pull request">
+          <AiPanel key={c.applied.length} pid={pid} kind="commit-message" label="Write commit message & PR description" filename={`${name}-pull-request.md`}
+            description="A Conventional Commits message and a PR description (summary, changes, security impact, how to test) for these fixes." />
         </Section>
       )}
 

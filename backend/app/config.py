@@ -13,9 +13,10 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-flash-lite-latest"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b"
-    # Optional: local Ollama (future "privacy mode"); empty = disabled.
-    ollama_url: str = ""
-    ollama_model: str = "qwen2.5-coder:7b"
+    # Local AI (Ollama). "local" = never use the cloud, "local-first" (default), "cloud-first".
+    ai_mode: str = "local-first"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5-coder:3b"
 
     # SQLite by default; set to a free Supabase/Neon Postgres URL to deploy.
     database_url: str = f"sqlite:///{BASE_DIR / 'data' / 'devmate.db'}"

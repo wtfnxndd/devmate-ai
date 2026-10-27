@@ -21,6 +21,7 @@ const STAGES = ["ingested", "queued", "parsing", "analyzing", "scanning dependen
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null)
   const [providers, setProviders] = useState<string[]>([])
+  const [aiMode, setAiMode] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [repo, setRepo] = useState("")
   const [busy, setBusy] = useState(false)
@@ -30,6 +31,7 @@ export default function Home() {
     try {
       const h = await api.get("/health")
       setProviders(h.llm_providers)
+      setAiMode(h.ai_mode ?? "")
       setProjects(await api.get("/projects"))
       setError(null)
     } catch (e) {
@@ -67,10 +69,12 @@ export default function Home() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Logo />
         <div className="flex items-center gap-1">
-          <Badge variant="outline" className="mr-2 hidden gap-1.5 rounded-full px-3 py-1 sm:inline-flex">
-            <span className={`size-1.5 rounded-full ${providers.length ? "bg-good" : "bg-muted-foreground"}`} />
-            {providers.length ? `AI · ${providers.join(" + ")}` : "Static mode"}
-          </Badge>
+          <Link to="/ai">
+            <Badge variant="outline" className="hover:bg-muted mr-2 hidden gap-1.5 rounded-full px-3 py-1 sm:inline-flex">
+              <span className={`size-1.5 rounded-full ${providers.includes("local") ? "bg-good" : providers.length ? "bg-sev-low" : "bg-muted-foreground"}`} />
+              {providers.length ? `AI · ${aiMode.replace("-", " ")} · ${providers.join(" + ")}` : "Set up AI"}
+            </Badge>
+          </Link>
           <BackendSettings onSaved={load} />
           <ThemeToggle />
         </div>
@@ -78,7 +82,7 @@ export default function Home() {
 
       <section className="mx-auto max-w-6xl px-6 pt-16 pb-14 text-center">
         <Badge variant="secondary" className="mb-6 rounded-full px-3 py-1 font-normal">
-          Free · OWASP scanning · dependency CVEs · AI fixes
+          Free · Local AI · OWASP scanning · dependency CVEs · AI fixes
         </Badge>
         <h1 className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
           The AI engineer that reviews, fixes and documents your code

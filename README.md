@@ -41,6 +41,7 @@ Review  Docs     Tests     Debug      Chat    Health report
 | One-click AI fix | Every finding has **Fix with AI**, which shows a before/after diff with an explanation. |
 | File assistants | For any file: **Explain**, **Refactor**, **Add docs** (docstrings, JSDoc, Dartdoc…) and **Tests**. |
 | Health trend | The score is recorded on every re-analysis and charted on the dashboard. |
+| Commit message and PR description | After applying fixes, writes a Conventional Commits message and a pull-request description (summary, changes, security impact, how to test). |
 | **Fix the project** | **Fix with AI** patches the top issues automatically, or use **Apply to project** on a single finding. Review the coloured diff, re-analyze to verify, then download the **fixed project (ZIP)** or a **.patch** (`git apply`) for your repo. **Revert all** restores the originals. |
 | Code duplication finder | Detects copy-pasted blocks of 6+ meaningful lines across files (like PMD CPD or jscpd), shows the duplication % and offers an AI DRY-refactor suggestion. |
 | Compare and trends | Compares any two analyses (score change, issues fixed, new issues) or two projects side by side. |
@@ -54,7 +55,7 @@ Every feature works **without any API key** (static mode). Adding a free key add
 |---|---|
 | Frontend | **React + Vite + Tailwind** with the **ElevenLabs UI** component library (shadcn-based; Conversation, Message, Response, ShimmeringText) and an ElevenLabs-style monochrome design. Flutter desktop app kept in `frontend/`. |
 | Backend | Python 3.11, FastAPI |
-| LLM | Google Gemini API (free tier) with Groq (free tier) as fallback. Ollama is optional. |
+| LLM | **Local-first: Ollama** (Qwen2.5-Coder / DeepSeek Coder / Llama 3.2 on your own computer; code never leaves it), with free Groq and Gemini as cloud fallback. Modes: Local only, Local first, Cloud first. |
 | Embeddings | all-MiniLM-L6-v2 via ONNX on the CPU (downloaded once, about 80 MB) |
 | Vector DB | ChromaDB (embedded) |
 | Database | SQLite locally, or free Supabase/Neon PostgreSQL via `DATABASE_URL` |
@@ -124,6 +125,18 @@ To point at a deployed backend: `flutter run -d chrome --dart-define=API_URL=htt
 | POST | `/api/projects/{id}/tests` | `{ "file": "src/x.py" }` |
 | POST | `/api/projects/{id}/debug` | `{ "error": "<stack trace>" }` |
 | POST/GET | `/api/projects/{id}/chat` | RAG chat about the codebase |
+
+## Local AI (Ollama)
+
+1. Install Ollama from https://ollama.com/download and open it.
+2. In DevMate, open **AI settings** (top-right badge, or the bottom of the sidebar). Ollama shows **Running**.
+3. Download **qwen2.5-coder:3b** (about 1.9 GB; recommended for laptops) or **qwen2.5-coder:7b** (better quality, slower without a GPU).
+4. Choose a mode:
+   - **Local only:** private; your code never leaves your machine.
+   - **Local first** (default): falls back to the cloud if Ollama is off.
+   - **Cloud first:** fastest.
+
+All AI answers **stream live**, and each answer shows which model wrote it. Prompts are trimmed for small local models.
 
 ## Staying within free limits
 

@@ -1,13 +1,16 @@
+import json
 import logging
+import queue
+import threading
 import re
 import shutil
 from pathlib import Path
 
 import secrets
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -172,8 +175,8 @@ def _summary(p: Project) -> dict:
 # ---------------------------------------------------------------- routes
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "llm_providers": llm.available(), "auth_required": bool(settings.api_token),
-            "local_import": settings.allow_local_import}
+    return {"status": "ok", "llm_providers": llm.available(), "ai_mode": llm.ai_mode(),
+            "auth_required": bool(settings.api_token), "local_import": settings.allow_local_import}
 
 
 @app.post("/api/projects/upload")
@@ -494,6 +497,133 @@ def compare_projects(a: int, b: int):
             "vulnerable_deps": d.get("vulnerable"), "total_vulns": d.get("total_vulns"),
         })
     return out
+
+
+@app.post("/api/projects/{pid}/commit-message")
+def commit_message(pid: int):
+    p = _get(pid)
+    return engines.commit_message(p.name, fixer.patch(pid, Path(p.path)), (p.results or {}).get("applied_fixes", []))
+
+
+# ---------------------------------------------------------------- streaming
+def _sse(q: queue.Queue):
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        kind, data = item
+        yield f"data: {json.dumps({'type': kind, 'data': data})}\n\n"
+
+
+@app.post("/api/projects/{pid}/stream/{kind}")
+def stream(pid: int, kind: str, body: dict = Body(default={}), refresh: bool = False):
+    """Runs any AI feature and streams the answer token by token (Server-Sent Events).
+
+    Events: provider (which model), delta (text chunk), reset (provider failed, restart), done (final result), error.
+    """
+    handlers = {
+        "review": lambda: review(pid, refresh),
+        "readme": lambda: readme(pid, refresh),
+        "api-docs": lambda: api_docs(pid, refresh),
+        "report": lambda: report(pid, refresh),
+        "tests": lambda: tests(pid, TestsIn(**body)),
+        "debug": lambda: debug(pid, DebugIn(**body)),
+        "chat": lambda: chat(pid, ChatIn(**body)),
+        "fix": lambda: fix(pid, FixIn(**body)),
+        "file-assist": lambda: file_assist(pid, FileTaskIn(**body)),
+        "duplicate-refactor": lambda: refactor_duplicate(pid, int(body.get("index", 0))),
+        "commit-message": lambda: commit_message(pid),
+    }
+    if kind not in handlers:
+        raise HTTPException(404, f"Unknown AI feature: {kind}")
+    q: queue.Queue = queue.Queue()
+
+    def work():
+        llm.streaming(q)
+        try:
+            q.put(("done", handlers[kind]()))
+        except HTTPException as e:
+            q.put(("error", e.detail))
+        except Exception as e:  # surface the reason to the UI instead of a broken stream
+            log.exception("stream %s failed", kind)
+            q.put(("error", str(e)))
+        finally:
+            q.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+    return StreamingResponse(_sse(q), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------- AI settings & local models
+RECOMMENDED_MODELS = [
+    {"name": "qwen2.5-coder:1.5b", "size_gb": 1.0, "note": "Fastest. Good for chat and quick explanations."},
+    {"name": "qwen2.5-coder:3b", "size_gb": 1.9, "note": "Recommended balance of speed and quality on a laptop CPU."},
+    {"name": "qwen2.5-coder:7b", "size_gb": 4.7, "note": "Best code quality; slower without a GPU."},
+    {"name": "deepseek-coder:6.7b", "size_gb": 3.8, "note": "DeepSeek Coder (named in the synopsis)."},
+    {"name": "llama3.2:3b", "size_gb": 2.0, "note": "General-purpose writing (README, reports)."},
+]
+
+
+class AiSettingsIn(BaseModel):
+    mode: str | None = None
+    local_model: str | None = None
+
+
+class PullIn(BaseModel):
+    name: str
+
+
+@app.get("/api/ai/status")
+def ai_status():
+    return {**llm.status(), "recommended": RECOMMENDED_MODELS}
+
+
+@app.put("/api/ai/settings")
+def ai_settings(body: AiSettingsIn):
+    if body.mode is not None:
+        if body.mode not in llm.MODES:
+            raise HTTPException(400, f"mode must be one of {llm.MODES}")
+        llm.set_setting("ai_mode", body.mode)
+    if body.local_model:
+        llm.set_setting("ollama_model", body.local_model)
+    return ai_status()
+
+
+def _ollama(path: str) -> str:
+    if not settings.ollama_url:
+        raise HTTPException(400, "OLLAMA_URL is not set")
+    return settings.ollama_url.rstrip("/") + path
+
+
+@app.post("/api/ai/models/pull")
+def pull_model(body: PullIn):
+    """Downloads a model into Ollama, streaming progress as Server-Sent Events."""
+    if llm.ollama_models(force=True) is None:
+        raise HTTPException(503, "Ollama is not running on the DevMate server")
+
+    def gen():
+        import httpx
+        try:
+            with httpx.stream("POST", _ollama("/api/pull"), json={"name": body.name, "stream": True}, timeout=None) as r:
+                for line in r.iter_lines():
+                    if line:
+                        yield f"data: {line}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        llm.ollama_models(force=True)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+@app.delete("/api/ai/models/{name:path}")
+def delete_model(name: str):
+    import httpx
+    r = httpx.request("DELETE", _ollama("/api/delete"), json={"name": name}, timeout=30)
+    if r.status_code >= 400:
+        raise HTTPException(r.status_code, r.text)
+    llm.ollama_models(force=True)
+    return {"deleted": name}
 
 
 @app.get("/api/projects/{pid}/chat")

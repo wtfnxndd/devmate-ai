@@ -2,7 +2,7 @@ import { useState } from "react"
 import { BookOpen, ClipboardCheck, FlaskConical, Loader2, MapPin, ScrollText, Stethoscope } from "lucide-react"
 import { toast } from "sonner"
 
-import { AiBadge, AiPanel, ErrorNote, Loading, Markdown, PageHeader, useApi } from "@/components/devmate"
+import { AiBadge, AiPanel, ErrorNote, Loading, Markdown, PageHeader, ProviderBadge, useApi } from "@/components/devmate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { api, type AiResult } from "@/lib/api"
+import { api, streamAi, type AiResult } from "@/lib/api"
 import { useProject } from "@/pages/ProjectLayout"
 
 type Kind = "review" | "docs" | "tests" | "debug" | "report"
@@ -23,14 +23,14 @@ export default function Assist({ kind }: { kind: Kind }) {
   if (kind === "review")
     return (
       <Page title="AI code review" description="Explains the top issues, flags false positives, maps them to OWASP and gives corrected code.">
-        <AiPanel endpoint={`/projects/${pid}/review`} label="Run AI code review" icon={<ClipboardCheck />} filename={`${name}-code-review.md`} pdf={pdf("review")}
+        <AiPanel pid={pid} kind="review" label="Run AI code review" icon={<ClipboardCheck />} filename={`${name}-code-review.md`} pdf={pdf("review")}
           description="Static tools have already found the issues; the AI reviews the most important ones in one request." />
       </Page>
     )
   if (kind === "report")
     return (
       <Page title="Health report" description="Executive summary, metrics, complexity, top issues, vulnerable dependencies and recommendations. Download it as Markdown or PDF.">
-        <AiPanel endpoint={`/projects/${pid}/report`} label="Generate health report" icon={<ScrollText />} filename={`${name}-health-report.md`} pdf={pdf("report")} autoRun />
+        <AiPanel pid={pid} kind="report" label="Generate health report" icon={<ScrollText />} filename={`${name}-health-report.md`} pdf={pdf("report")} autoRun />
       </Page>
     )
   if (kind === "docs")
@@ -39,10 +39,10 @@ export default function Assist({ kind }: { kind: Kind }) {
         <Tabs defaultValue="readme">
           <TabsList><TabsTrigger value="readme">README.md</TabsTrigger><TabsTrigger value="api">API reference</TabsTrigger></TabsList>
           <TabsContent value="readme" className="pt-4">
-            <AiPanel endpoint={`/projects/${pid}/readme`} label="Generate README" icon={<BookOpen />} filename="README.md" pdf={pdf("readme")} />
+            <AiPanel pid={pid} kind="readme" label="Generate README" icon={<BookOpen />} filename="README.md" pdf={pdf("readme")} />
           </TabsContent>
           <TabsContent value="api" className="pt-4">
-            <AiPanel endpoint={`/projects/${pid}/api-docs`} label="Generate API docs" icon={<BookOpen />} filename="API.md" pdf={pdf("api_docs")}
+            <AiPanel pid={pid} kind="api-docs" label="Generate API docs" icon={<BookOpen />} filename="API.md" pdf={pdf("api_docs")}
               description="Detects FastAPI, Flask, Express, Spring and Django routes." />
           </TabsContent>
         </Tabs>
@@ -82,7 +82,7 @@ function Tests({ pid }: { pid: number }) {
           </SelectContent>
         </Select>
         {file && (
-          <AiPanel key={file} endpoint={`/projects/${pid}/tests`} body={{ file }} label="Generate tests" icon={<FlaskConical />}
+          <AiPanel key={file} pid={pid} kind="tests" body={{ file }} label="Generate tests" icon={<FlaskConical />}
             filename={`tests_${file.split("/").pop()}.md`} />
         )}
       </div>
@@ -99,11 +99,15 @@ function Debug({ pid }: { pid: number }) {
   const [error, setError] = useState("")
   const [res, setRes] = useState<AiResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [live, setLive] = useState("")
+  const [provider, setProvider] = useState<string | null>(null)
   const go = async () => {
     if (!error.trim()) return
     setBusy(true)
+    setLive("")
+    setProvider(null)
     try {
-      setRes(await api.post(`/projects/${pid}/debug`, { error }))
+      setRes(await streamAi(pid, "debug", { error }, { onText: setLive, onProvider: setProvider }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -119,9 +123,11 @@ function Debug({ pid }: { pid: number }) {
             {busy ? <Loader2 className="animate-spin" /> : <Stethoscope />} Explain & fix
           </Button>
           <Button variant="ghost" onClick={() => { setError(""); setRes(null) }}>Clear</Button>
-          {res && <AiBadge ai={res.ai} />}
+          <ProviderBadge provider={provider} />
+          {res && !busy && <AiBadge ai={res.ai} />}
         </div>
-        {busy && <ShimmeringText text="Tracing the error through your code…" className="text-sm" />}
+        {busy && !live && <ShimmeringText text="Tracing the error through your code…" className="text-sm" />}
+        {busy && live && <Markdown>{live}</Markdown>}
         {res && !busy && (
           <div className="space-y-4 pt-2">
             {(res.frames as any[])?.length > 0 && (
