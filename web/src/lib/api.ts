@@ -35,9 +35,15 @@ export async function initApi() {
   baseUrl = store.get("api_url") ?? DEFAULT_URL
   token = store.get("api_token") ?? ""
 
-  if (!fromQuery && location.protocol === "https:") {
+  await discoverBackend()
+}
+
+/** On the hosted site, the launcher publishes the backend's current tunnel URL at /backend-url.
+ *  It always wins over saved or link-provided addresses, which go stale whenever the tunnel restarts. */
+export async function discoverBackend() {
+  if (location.protocol === "https:") {
     try {
-      const r = await fetch("/backend-url", { cache: "no-store", signal: AbortSignal.timeout(4000) })
+      const r = await fetch("/backend-url", { cache: "no-store", signal: AbortSignal.timeout(8000) })
       const live = (await r.text()).trim()
       if (r.ok && live.startsWith("https://")) {
         baseUrl = clean(live)

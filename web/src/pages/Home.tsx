@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
-import { api, ApiError, getConfig, type ProjectSummary } from "@/lib/api"
+import { api, ApiError, discoverBackend, getConfig, type ProjectSummary } from "@/lib/api"
 
 const STAGES = ["ingested", "queued", "parsing", "analyzing", "scanning dependencies", "indexing", "ready"]
 
@@ -27,7 +27,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const load = async () => {
+  const load = async (retry = true): Promise<void> => {
     try {
       const h = await api.get("/health")
       setProviders(h.llm_providers)
@@ -35,6 +35,12 @@ export default function Home() {
       setProjects(await api.get("/projects"))
       setError(null)
     } catch (e) {
+      // The tunnel address may have changed since it was saved: look it up again once.
+      if (retry && !(e instanceof ApiError && e.status === 401)) {
+        const before = getConfig().baseUrl
+        await discoverBackend()
+        if (getConfig().baseUrl !== before) return load(false)
+      }
       setError(e instanceof ApiError && e.status === 401
         ? "This server needs an access token. Open the token link once, or add it in settings."
         : `Can't reach the DevMate backend at ${getConfig().baseUrl}. Start "DevMate Online" on your Mac.`)
@@ -75,7 +81,7 @@ export default function Home() {
               {providers.length ? `AI · ${aiMode.replace("-", " ")} · ${providers.join(" + ")}` : "Set up AI"}
             </Badge>
           </Link>
-          <BackendSettings onSaved={load} />
+          <BackendSettings onSaved={() => load()} />
           <ThemeToggle />
         </div>
       </header>
@@ -134,7 +140,7 @@ export default function Home() {
           <Card className="mb-8 flex-row items-center gap-3 px-5 py-4 shadow-none">
             <WifiOff className="text-muted-foreground size-5 shrink-0" />
             <p className="flex-1 text-sm">{error}</p>
-            <Button variant="outline" size="sm" onClick={load}>Retry</Button>
+            <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
           </Card>
         )}
 
@@ -150,7 +156,7 @@ export default function Home() {
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects?.map((p) => <ProjectCard key={p.id} p={p} onChange={load} />)}
+          {projects?.map((p) => <ProjectCard key={p.id} p={p} onChange={() => load()} />)}
         </div>
       </main>
     </div>
