@@ -321,7 +321,11 @@ def dependencies(pid: int):
 @app.get("/api/projects/{pid}/hotspots")
 def hotspots(pid: int):
     p = _get(pid)
-    hot = _require(p, "hotspots")
+    analysis = _require(p, "analysis")
+    hot = (p.results or {}).get("hotspots")
+    if not hot:  # analysed before hotspots existed: compute now
+        hot = file_metrics(Path(p.path), analysis["findings"])
+        _save(pid, results={"hotspots": hot})
     hist = (p.results or {}).get("history", [])
     # Per-file trend across analyses (only snapshots that recorded files).
     trend = {}
@@ -333,7 +337,13 @@ def hotspots(pid: int):
 
 @app.get("/api/projects/{pid}/secrets")
 def project_secrets(pid: int):
-    return _require(_get(pid), "analysis").get("secrets", {"secrets": [], "counts": {"high": 0, "medium": 0, "low": 0}})
+    p = _get(pid)
+    analysis = _require(p, "analysis")
+    if "secrets" not in analysis:  # analysed before the secrets scanner existed: scan now
+        from .secrets_scan import scan as scan_secrets
+        analysis["secrets"] = scan_secrets(Path(p.path))
+        _save(pid, results={"analysis": analysis})
+    return analysis["secrets"]
 
 
 @app.get("/api/projects/{pid}/history")
