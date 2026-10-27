@@ -5,6 +5,9 @@ import { ThemeProvider } from "next-themes"
 import App from "./App"
 import { Toaster } from "@/components/ui/sonner"
 import { initApi } from "@/lib/api"
+// Fonts are bundled (no external stylesheet that could block startup on slow networks).
+import "@fontsource-variable/inter"
+import "@fontsource-variable/jetbrains-mono"
 import "./index.css"
 
 initApi().finally(() => {
