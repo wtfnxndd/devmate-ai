@@ -8,6 +8,8 @@ The AI mode decides the order:  "local" (local only), "local-first" (default), "
 Answers are cached in the database, and can be streamed token-by-token to the UI (see `streaming`).
 """
 import contextvars
+import json
+import os
 import hashlib
 import logging
 import queue
@@ -30,7 +32,10 @@ SYSTEM_PROMPT = (
 
 MODES = ("local", "local-first", "cloud-first")
 # Small local models have small context windows and run on CPU: keep prompts short.
-LOCAL_PROMPT_CHARS = 9000
+LOCAL_PROMPT_CHARS = 3500
+LOCAL_MAX_TOKENS = 700
+# Physical cores only: hyper-threads slow llama.cpp down on Intel CPUs.
+LOCAL_THREADS = max(1, (os.cpu_count() or 2) // 2)
 
 
 class NoLLMAvailable(RuntimeError):
@@ -171,6 +176,23 @@ def _shrink(prompt: str) -> str:
     return prompt[:half] + "\n\n[... trimmed for the local model ...]\n\n" + prompt[-half:]
 
 
+def _ollama_chat(model: str, messages: list):
+    """Streams from Ollama's native API (so CPU tuning options are honoured). Yields text chunks."""
+    body = {"model": model, "messages": messages, "stream": True, "keep_alive": "30m",
+            "options": {"num_ctx": 4096, "num_thread": LOCAL_THREADS, "num_predict": LOCAL_MAX_TOKENS, "temperature": 0.2}}
+    with httpx.stream("POST", settings.ollama_url.rstrip("/") + "/api/chat", json=body, timeout=httpx.Timeout(600, connect=5)) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if not line:
+                continue
+            msg = json.loads(line)
+            if msg.get("error"):
+                raise RuntimeError(msg["error"])
+            piece = (msg.get("message") or {}).get("content")
+            if piece:
+                yield piece
+
+
 def ask(prompt: str, system: str = SYSTEM_PROMPT, use_cache: bool = True, history: list | None = None) -> str:
     key = hashlib.sha256((system + "\x00" + prompt + str(history or "")).encode()).hexdigest()
     if use_cache:
@@ -197,18 +219,22 @@ def ask(prompt: str, system: str = SYSTEM_PROMPT, use_cache: bool = True, histor
         started = False
         try:
             _emit("provider", name)
-            if _sink.get() is None:
+            if local:
+                # Native Ollama API with CPU tuning; the model stays loaded for 30 minutes between requests.
+                pieces = _ollama_chat(model, messages)
+            elif _sink.get() is None:
                 resp = client.chat.completions.create(model=model, messages=messages, temperature=0.2)
-                text = resp.choices[0].message.content or ""
+                pieces = [resp.choices[0].message.content or ""]
             else:
-                parts = []
-                for chunk in client.chat.completions.create(model=model, messages=messages, temperature=0.2, stream=True):
-                    delta = chunk.choices[0].delta.content if chunk.choices else None
-                    if delta:
-                        started = True
-                        parts.append(delta)
-                        _emit("delta", delta)
-                text = "".join(parts)
+                pieces = (c.choices[0].delta.content for c in
+                          client.chat.completions.create(model=model, messages=messages, temperature=0.2, stream=True)
+                          if c.choices and c.choices[0].delta.content)
+            parts = []
+            for piece in pieces:
+                started = True
+                parts.append(piece)
+                _emit("delta", piece)
+            text = "".join(parts)
             # Reasoning models may wrap their thinking in <think> tags; keep only the answer.
             text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.S).strip()
             with SessionLocal() as db:
